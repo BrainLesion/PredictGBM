@@ -1,0 +1,4 @@
+# Setup for a minimal docker container to test the pipeline.
+# This "model" simply uses the tumor segmentation as prediction.
+FROM alpine:latest
+ENTRYPOINT ["sh", "-c", "cp /mlcube_io0/Patient-00000/00000-tumorseg.nii.gz /mlcube_io1/00000.nii.gz && sleep 10"]

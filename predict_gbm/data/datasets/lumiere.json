@@ -1,0 +1,1784 @@
+{
+  "dataset_id": "LUMIERE",
+  "root_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging",
+  "patients": [
+    {
+      "patient_id": "Patient-001",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-001",
+      "exams": [
+        {
+          "dir_name": "week-000-1",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-001/week-000-1/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-001/week-000-1/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-001/week-000-1/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-001/week-000-1/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-000-2",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-001/week-000-2/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-001/week-000-2/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-001/week-000-2/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-001/week-000-2/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-044",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-001/week-044/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-001/week-044/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-001/week-044/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-001/week-044/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-002",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-002",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-002/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-002/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-002/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-002/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-047",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-002/week-047/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-002/week-047/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-002/week-047/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-002/week-047/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-004",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-004",
+      "exams": [
+        {
+          "dir_name": "week-000-1",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-004/week-000-1/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-004/week-000-1/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-004/week-000-1/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-004/week-000-1/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-000-2",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-004/week-000-2/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-004/week-000-2/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-004/week-000-2/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-004/week-000-2/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-086",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-004/week-086/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-004/week-086/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-004/week-086/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-004/week-086/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-005",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-005",
+      "exams": [
+        {
+          "dir_name": "week-000-1",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-005/week-000-1/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-005/week-000-1/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-005/week-000-1/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-005/week-000-1/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-000-2",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-005/week-000-2/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-005/week-000-2/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-005/week-000-2/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-005/week-000-2/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-015",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-005/week-015/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-005/week-015/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-005/week-015/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-005/week-015/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-006",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-006",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-006/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-006/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-006/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-006/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-001",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-006/week-001/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-006/week-001/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-006/week-001/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-006/week-001/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-135",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-006/week-135/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-006/week-135/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-006/week-135/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-006/week-135/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-007",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-007",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-007/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-007/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-007/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-007/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-001",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-007/week-001/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-007/week-001/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-007/week-001/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-007/week-001/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-105",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-007/week-105/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-007/week-105/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-007/week-105/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-007/week-105/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-008",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-008",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-008/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-008/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-008/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-008/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-017",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-008/week-017/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-008/week-017/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-008/week-017/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-008/week-017/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-009",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-009",
+      "exams": [
+        {
+          "dir_name": "week-000-1",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-009/week-000-1/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-009/week-000-1/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-009/week-000-1/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-009/week-000-1/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-000-2",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-009/week-000-2/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-009/week-000-2/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-009/week-000-2/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-009/week-000-2/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-066",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-009/week-066/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-009/week-066/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-009/week-066/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-009/week-066/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-010",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-010",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-010/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-010/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-010/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-010/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-001",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-010/week-001/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-010/week-001/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-010/week-001/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-010/week-001/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-015",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-010/week-015/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-010/week-015/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-010/week-015/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-010/week-015/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-011",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-011",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-011/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-011/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-011/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-011/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-028",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-011/week-028/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-011/week-028/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-011/week-028/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-011/week-028/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-012",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-012",
+      "exams": [
+        {
+          "dir_name": "week-000-1",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-012/week-000-1/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-012/week-000-1/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-012/week-000-1/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-012/week-000-1/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-000-2",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-012/week-000-2/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-012/week-000-2/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-012/week-000-2/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-012/week-000-2/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-084",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-012/week-084/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-012/week-084/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-012/week-084/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-012/week-084/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-013",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-013",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-013/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-013/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-013/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-013/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-001",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-013/week-001/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-013/week-001/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-013/week-001/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-013/week-001/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-030",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-013/week-030/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-013/week-030/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-013/week-030/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-013/week-030/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-014",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-014",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-014/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-014/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-014/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-014/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-001",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-014/week-001/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-014/week-001/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-014/week-001/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-014/week-001/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-012",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-014/week-012/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-014/week-012/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-014/week-012/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-014/week-012/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-015",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-015",
+      "exams": [
+        {
+          "dir_name": "week-000-1",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-015/week-000-1/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-015/week-000-1/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-015/week-000-1/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-015/week-000-1/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-000-2",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-015/week-000-2/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-015/week-000-2/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-015/week-000-2/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-015/week-000-2/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-146",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-015/week-146/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-015/week-146/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-015/week-146/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-015/week-146/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-017",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-017",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-017/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-017/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-017/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-017/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-001",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-017/week-001/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-017/week-001/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-017/week-001/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-017/week-001/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-035",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-017/week-035/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-017/week-035/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-017/week-035/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-017/week-035/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-018",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-018",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-018/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-018/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-018/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-018/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-082",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-018/week-082/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-018/week-082/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-018/week-082/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-018/week-082/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-021",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-021",
+      "exams": [
+        {
+          "dir_name": "week-000-1",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-021/week-000-1/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-021/week-000-1/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-021/week-000-1/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-021/week-000-1/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-000-2",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-021/week-000-2/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-021/week-000-2/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-021/week-000-2/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-021/week-000-2/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-035",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-021/week-035/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-021/week-035/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-021/week-035/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-021/week-035/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-022",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-022",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-022/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-022/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-022/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-022/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-001",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-022/week-001/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-022/week-001/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-022/week-001/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-022/week-001/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-053",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-022/week-053/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-022/week-053/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-022/week-053/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-022/week-053/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-023",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-023",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-023/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-023/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-023/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-023/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-001",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-023/week-001/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-023/week-001/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-023/week-001/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-023/week-001/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-115",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-023/week-115/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-023/week-115/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-023/week-115/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-023/week-115/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-025",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-025",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-025/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-025/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-025/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-025/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-001",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-025/week-001/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-025/week-001/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-025/week-001/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-025/week-001/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-070",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-025/week-070/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-025/week-070/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-025/week-070/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-025/week-070/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-027",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-027",
+      "exams": [
+        {
+          "dir_name": "week-000-1",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-027/week-000-1/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-027/week-000-1/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-027/week-000-1/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-027/week-000-1/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-000-2",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-027/week-000-2/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-027/week-000-2/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-027/week-000-2/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-027/week-000-2/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-014",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-027/week-014/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-027/week-014/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-027/week-014/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-027/week-014/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-028",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-028",
+      "exams": [
+        {
+          "dir_name": "week-000-1",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-028/week-000-1/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-028/week-000-1/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-028/week-000-1/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-028/week-000-1/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-000-2",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-028/week-000-2/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-028/week-000-2/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-028/week-000-2/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-028/week-000-2/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-015",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-028/week-015/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-028/week-015/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-028/week-015/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-028/week-015/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-029",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-029",
+      "exams": [
+        {
+          "dir_name": "week-000-1",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-029/week-000-1/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-029/week-000-1/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-029/week-000-1/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-029/week-000-1/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-000-2",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-029/week-000-2/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-029/week-000-2/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-029/week-000-2/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-029/week-000-2/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-255",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-029/week-255/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-029/week-255/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-029/week-255/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-029/week-255/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-030",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-030",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-030/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-030/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-030/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-030/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-001",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-030/week-001/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-030/week-001/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-030/week-001/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-030/week-001/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-085",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-030/week-085/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-030/week-085/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-030/week-085/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-030/week-085/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-031",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-031",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-031/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-031/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-031/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-031/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-190",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-031/week-190/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-031/week-190/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-031/week-190/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-031/week-190/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-032",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-032",
+      "exams": [
+        {
+          "dir_name": "week-000-1",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-032/week-000-1/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-032/week-000-1/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-032/week-000-1/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-032/week-000-1/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-000-2",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-032/week-000-2/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-032/week-000-2/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-032/week-000-2/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-032/week-000-2/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-096",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-032/week-096/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-032/week-096/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-032/week-096/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-032/week-096/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-033",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-033",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-033/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-033/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-033/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-033/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-104",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-033/week-104/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-033/week-104/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-033/week-104/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-033/week-104/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-034",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-034",
+      "exams": [
+        {
+          "dir_name": "week-000-1",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-034/week-000-1/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-034/week-000-1/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-034/week-000-1/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-034/week-000-1/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-000-2",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-034/week-000-2/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-034/week-000-2/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-034/week-000-2/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-034/week-000-2/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-058",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-034/week-058/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-034/week-058/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-034/week-058/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-034/week-058/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-037",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-037",
+      "exams": [
+        {
+          "dir_name": "week-000-1",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-037/week-000-1/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-037/week-000-1/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-037/week-000-1/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-037/week-000-1/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-000-2",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-037/week-000-2/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-037/week-000-2/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-037/week-000-2/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-037/week-000-2/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-037",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-037/week-037/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-037/week-037/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-037/week-037/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-037/week-037/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-038",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-038",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-038/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-038/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-038/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-038/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-023",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-038/week-023/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-038/week-023/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-038/week-023/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-038/week-023/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-039",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-039",
+      "exams": [
+        {
+          "dir_name": "week-000-1",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-039/week-000-1/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-039/week-000-1/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-039/week-000-1/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-039/week-000-1/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-000-2",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-039/week-000-2/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-039/week-000-2/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-039/week-000-2/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-039/week-000-2/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-044",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-039/week-044/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-039/week-044/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-039/week-044/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-039/week-044/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-040",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-040",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-040/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-040/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-040/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-040/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-001",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-040/week-001/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-040/week-001/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-040/week-001/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-040/week-001/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-015",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-040/week-015/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-040/week-015/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-040/week-015/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-040/week-015/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-041",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-041",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-041/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-041/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-041/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-041/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-038",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-041/week-038/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-041/week-038/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-041/week-038/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-041/week-038/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-042",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-042",
+      "exams": [
+        {
+          "dir_name": "week-000-1",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-042/week-000-1/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-042/week-000-1/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-042/week-000-1/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-042/week-000-1/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-000-2",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-042/week-000-2/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-042/week-000-2/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-042/week-000-2/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-042/week-000-2/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-082",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-042/week-082/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-042/week-082/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-042/week-082/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-042/week-082/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-043",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-043",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-043/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-043/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-043/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-043/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-116",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-043/week-116/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-043/week-116/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-043/week-116/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-043/week-116/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-045",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-045",
+      "exams": [
+        {
+          "dir_name": "week-000-1",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-045/week-000-1/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-045/week-000-1/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-045/week-000-1/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-045/week-000-1/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-000-2",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-045/week-000-2/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-045/week-000-2/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-045/week-000-2/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-045/week-000-2/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-028",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-045/week-028/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-045/week-028/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-045/week-028/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-045/week-028/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-046",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-046",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-046/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-046/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-046/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-046/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-001",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-046/week-001/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-046/week-001/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-046/week-001/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-046/week-001/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-064",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-046/week-064/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-046/week-064/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-046/week-064/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-046/week-064/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-048",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-048",
+      "exams": [
+        {
+          "dir_name": "week-000-1",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-048/week-000-1/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-048/week-000-1/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-048/week-000-1/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-048/week-000-1/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-000-2",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-048/week-000-2/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-048/week-000-2/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-048/week-000-2/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-048/week-000-2/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-049",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-048/week-049/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-048/week-049/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-048/week-049/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-048/week-049/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-049",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-049",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-049/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-049/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-049/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-049/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-046",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-049/week-046/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-049/week-046/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-049/week-046/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-049/week-046/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-050",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-050",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-050/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-050/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-050/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-050/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-001",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-050/week-001/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-050/week-001/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-050/week-001/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-050/week-001/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-061",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-050/week-061/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-050/week-061/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-050/week-061/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-050/week-061/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-051",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-051",
+      "exams": [
+        {
+          "dir_name": "week-000-1",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-051/week-000-1/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-051/week-000-1/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-051/week-000-1/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-051/week-000-1/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-000-2",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-051/week-000-2/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-051/week-000-2/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-051/week-000-2/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-051/week-000-2/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-103",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-051/week-103/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-051/week-103/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-051/week-103/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-051/week-103/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-052",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-052",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-052/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-052/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-052/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-052/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-168",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-052/week-168/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-052/week-168/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-052/week-168/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-052/week-168/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-055",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-055",
+      "exams": [
+        {
+          "dir_name": "week-000-1",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-055/week-000-1/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-055/week-000-1/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-055/week-000-1/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-055/week-000-1/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-000-2",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-055/week-000-2/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-055/week-000-2/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-055/week-000-2/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-055/week-000-2/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-118",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-055/week-118/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-055/week-118/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-055/week-118/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-055/week-118/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-059",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-059",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-059/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-059/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-059/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-059/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-001",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-059/week-001/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-059/week-001/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-059/week-001/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-059/week-001/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-136",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-059/week-136/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-059/week-136/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-059/week-136/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-059/week-136/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-060",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-060",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-060/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-060/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-060/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-060/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-001",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-060/week-001/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-060/week-001/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-060/week-001/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-060/week-001/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-040",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-060/week-040/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-060/week-040/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-060/week-040/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-060/week-040/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-061",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-061",
+      "exams": [
+        {
+          "dir_name": "week-000-1",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-061/week-000-1/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-061/week-000-1/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-061/week-000-1/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-061/week-000-1/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-000-2",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-061/week-000-2/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-061/week-000-2/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-061/week-000-2/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-061/week-000-2/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-046",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-061/week-046/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-061/week-046/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-061/week-046/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-061/week-046/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-062",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-062",
+      "exams": [
+        {
+          "dir_name": "week-000-1",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-062/week-000-1/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-062/week-000-1/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-062/week-000-1/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-062/week-000-1/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-000-2",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-062/week-000-2/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-062/week-000-2/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-062/week-000-2/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-062/week-000-2/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-064",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-062/week-064/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-062/week-064/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-062/week-064/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-062/week-064/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-064",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-064",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-064/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-064/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-064/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-064/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-062",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-064/week-062/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-064/week-062/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-064/week-062/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-064/week-062/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-066",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-066",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-066/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-066/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-066/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-066/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-001",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-066/week-001/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-066/week-001/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-066/week-001/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-066/week-001/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-101",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-066/week-101/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-066/week-101/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-066/week-101/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-066/week-101/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-067",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-067",
+      "exams": [
+        {
+          "dir_name": "week-000-2",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-067/week-000-2/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-067/week-000-2/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-067/week-000-2/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-067/week-000-2/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-167",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-067/week-167/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-067/week-167/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-067/week-167/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-067/week-167/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-068",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-068",
+      "exams": [
+        {
+          "dir_name": "week-000-1",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-068/week-000-1/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-068/week-000-1/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-068/week-000-1/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-068/week-000-1/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-000-2",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-068/week-000-2/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-068/week-000-2/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-068/week-000-2/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-068/week-000-2/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-047",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-068/week-047/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-068/week-047/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-068/week-047/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-068/week-047/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-071",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-071",
+      "exams": [
+        {
+          "dir_name": "week-000-1",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-071/week-000-1/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-071/week-000-1/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-071/week-000-1/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-071/week-000-1/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-000-2",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-071/week-000-2/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-071/week-000-2/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-071/week-000-2/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-071/week-000-2/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-062",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-071/week-062/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-071/week-062/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-071/week-062/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-071/week-062/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-072",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-072",
+      "exams": [
+        {
+          "dir_name": "week-000-1",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-072/week-000-1/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-072/week-000-1/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-072/week-000-1/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-072/week-000-1/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-000-2",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-072/week-000-2/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-072/week-000-2/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-072/week-000-2/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-072/week-000-2/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-120",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-072/week-120/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-072/week-120/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-072/week-120/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-072/week-120/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-073",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-073",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-073/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-073/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-073/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-073/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-001",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-073/week-001/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-073/week-001/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-073/week-001/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-073/week-001/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-242",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-073/week-242/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-073/week-242/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-073/week-242/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-073/week-242/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-075",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-075",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-075/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-075/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-075/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-075/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-044",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-075/week-044/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-075/week-044/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-075/week-044/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-075/week-044/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-077",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-077",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-077/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-077/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-077/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-077/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-001",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-077/week-001/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-077/week-001/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-077/week-001/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-077/week-001/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-083",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-077/week-083/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-077/week-083/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-077/week-083/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-077/week-083/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-078",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-078",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-078/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-078/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-078/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-078/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-001",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-078/week-001/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-078/week-001/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-078/week-001/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-078/week-001/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-041",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-078/week-041/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-078/week-041/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-078/week-041/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-078/week-041/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-080",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-080",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-080/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-080/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-080/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-080/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-001",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-080/week-001/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-080/week-001/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-080/week-001/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-080/week-001/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-018",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-080/week-018/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-080/week-018/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-080/week-018/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-080/week-018/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-086",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-086",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-086/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-086/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-086/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-086/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-001",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-086/week-001/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-086/week-001/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-086/week-001/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-086/week-001/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-169",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-086/week-169/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-086/week-169/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-086/week-169/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-086/week-169/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-087",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-087",
+      "exams": [
+        {
+          "dir_name": "week-000-1",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-087/week-000-1/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-087/week-000-1/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-087/week-000-1/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-087/week-000-1/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-000-2",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-087/week-000-2/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-087/week-000-2/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-087/week-000-2/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-087/week-000-2/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-024",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-087/week-024/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-087/week-024/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-087/week-024/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-087/week-024/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-089",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-089",
+      "exams": [
+        {
+          "dir_name": "week-000-1",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-089/week-000-1/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-089/week-000-1/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-089/week-000-1/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-089/week-000-1/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-000-2",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-089/week-000-2/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-089/week-000-2/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-089/week-000-2/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-089/week-000-2/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-064",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-089/week-064/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-089/week-064/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-089/week-064/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-089/week-064/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-090",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-090",
+      "exams": [
+        {
+          "dir_name": "week-000-1",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-090/week-000-1/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-090/week-000-1/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-090/week-000-1/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-090/week-000-1/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-000-2",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-090/week-000-2/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-090/week-000-2/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-090/week-000-2/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-090/week-000-2/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-029",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-090/week-029/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-090/week-029/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-090/week-029/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-090/week-029/T2.nii.gz"
+        }
+      ]
+    },
+    {
+      "patient_id": "Patient-091",
+      "patient_dir": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-091",
+      "exams": [
+        {
+          "dir_name": "week-000",
+          "timepoint": "preop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-091/week-000/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-091/week-000/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-091/week-000/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-091/week-000/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-001",
+          "timepoint": "postop",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-091/week-001/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-091/week-001/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-091/week-001/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-091/week-001/T2.nii.gz"
+        },
+        {
+          "dir_name": "week-043",
+          "timepoint": "followup",
+          "t1c": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-091/week-043/CT1.nii.gz",
+          "flair": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-091/week-043/FLAIR.nii.gz",
+          "t1": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-091/week-043/T1.nii.gz",
+          "t2": "/mnt/Drive2/lucas/datasets/LUMIERE/Imaging/Patient-091/week-043/T2.nii.gz"
+        }
+      ]
+    }
+  ]
+}

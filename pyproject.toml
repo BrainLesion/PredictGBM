@@ -6,21 +6,35 @@ build-backend = "poetry_dynamic_versioning.backend"
 enable = true
 
 [tool.poetry]
-name = "package_name"
-version = "0.0.0.dev"
-description = ""
-authors = ["Marcel Rosier <marcel.rosier@tum.de>"]
-repository = "https://www.TODO.com"
-homepage = "https://www.TODO.com"
-documentation = "https://www.TODO.com"
+name = "predict-gbm"
+description = "Tools for processing MRI images and evaluating tumor growth models via radiation plans."
+authors = ["Lucas Zimmer <zimmer.lucas.w@gmail.com>"]
+repository = "https://github.com/BrainLesion/PredictGBM"
 readme = "README.md"
 
+keywords = [
+  "brain tumor",
+  "glioma",
+]
+
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
 
 # Add the exclude field directly under [tool.poetry]
-exclude = ["examples", "benchmark"]
+exclude = ["scripts", "test", "docs", ".github"]
 
 [tool.poetry.dependencies]
-python = ">=3.10"
+python = ">=3.10,<4.0"
+brats = "^0.0.28"
+brainles-preprocessing = "^0.6.2"
+wandb = "^0.21.1"
+pydicom = "^3.0.1"
+typing-extensions = "^4.14.1"
+pypdf = "^6.0.0"
 
 
 [tool.poetry.group.dev.dependencies]
@@ -39,3 +53,6 @@ Sphinx = ">=7.0.0"
 sphinx-copybutton = ">=0.5.2"
 furo = ">=2024.8.6"
 myst-parser = ">=2.0.0"
+
+[tool.flake8]
+max-line-length = 160
