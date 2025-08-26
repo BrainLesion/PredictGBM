@@ -27,6 +27,23 @@ def preprocess_readme(input_file: str, output_file: str) -> None:
             + "\n```",
             content,
         )
+
+    # Replace empty Markdown links with plain text to avoid Sphinx warnings
+    content = re.sub(r"\[([^\]]+)\]\(\s*\)", r"\1", content)
+
+    # Convert relative repository links to absolute GitHub URLs
+    repo_base = "https://github.com/BrainLesion/PredictGBM/blob/main/"
+    content = re.sub(
+        r"\[([^\]]+)\]\((scripts/[^)]+)\)",
+        lambda m: f"[{m.group(1)}]({repo_base}{m.group(2)})",
+        content,
+    )
+    content = re.sub(
+        r"\[([^\]]+)\]\((CONTRIBUTING\.md)\)",
+        lambda m: f"[{m.group(1)}]({repo_base}{m.group(2)})",
+        content,
+    )
+
     # Write the transformed content to the output file
     with open(output_file, "w") as file:
         file.write(content)

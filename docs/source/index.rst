@@ -1,12 +1,12 @@
-PACKAGE_NAME documentation
-===================
+predict-gbm documentation
+=========================
 
 .. include:: ../README_preprocessed.md
    :parser: myst_parser.sphinx_
 
 
 Sections
-===================
+========================
 
 
 
@@ -15,8 +15,3 @@ Sections
    :caption: Getting Started:
 
    readme
-
-.. toctree::
-   :maxdepth: 2
-   :caption: API Reference:
-

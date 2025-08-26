@@ -16,9 +16,9 @@ run(["python", "preprocess_readme.py"])
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = "PACKAGE_NAME"
-copyright = "2024, Marcel Rosier et al."
-author = "Marcel Rosier, Florian Kofler"
+project = "predict-gbm"
+copyright = "2025, Lucas Zimmer"
+author = "Lucas Zimmer"
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration

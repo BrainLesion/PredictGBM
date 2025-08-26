@@ -4,7 +4,7 @@
 [![Stable Version](https://img.shields.io/pypi/v/predict-gbm?label=stable)](https://pypi.python.org/pypi/predict-gbm/)
 [![Documentation Status](https://readthedocs.org/projects/predict-gbm/badge/?version=latest)](http://predict-gbm.readthedocs.io/?badge=latest)
 [![tests](https://github.com/BrainLesion/PredictGBM/actions/workflows/tests.yml/badge.svg)](https://github.com/BrainLesion/PredictGBM/actions/workflows/tests.yml)
-[![codecov](https://codecov.io/gh/BrainLesion/predict-gbm/graph/badge.svg?token=A7FWUKO9Y4)](https://codecov.io/gh/BrainLesion/predict-gbm)
+<!-- [![codecov](https://codecov.io/gh/BrainLesion/predict-gbm/graph/badge.svg?token=A7FWUKO9Y4)](https://codecov.io/gh/BrainLesion/predict-gbm) -->
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 Providing a unified framework for evaluating and benchmarking glioblastoma models by assessing radiation plan coverage on recurrences observed in follow-up MRI exams.
@@ -27,13 +27,13 @@ The package can be installed via pypi:
 pip install predict-gbm
 ```
 
-## Data and Models
+## Data and models
 
 Preprocessed data can be obtained from [TODO]()
 
 Ready-to-use dockered versions are available for some growth models from [TODO](). Placing them in `predict_gbm/models/` just like the `test_model.tar`, allows you to use them via `algo_id="test_model"`. 
 
-## Use Cases and Tutorials
+## Use cases and tutorials
 
 Examples can be found in `/scripts`:
 
@@ -71,7 +71,7 @@ Input and output data are passed to/from the container using mounted directories
    ┗ 00000.nii.gz
 ```
 
-### Dockerfile Example
+### Dockerfile example
 
 Ensure the container adheres to the above I/O structure. An example Dockerfile could be:
 
