@@ -2,10 +2,10 @@
 
 [![Python Versions](https://img.shields.io/pypi/pyversions/predict-gbm)](https://pypi.org/project/predict-gbm/)
 [![Stable Version](https://img.shields.io/pypi/v/predict-gbm?label=stable)](https://pypi.python.org/pypi/predict-gbm/)
-[![Documentation Status](https://readthedocs.org/projects/predict-gbm/badge/?version=latest)](http://predict-gbm.readthedocs.io/?badge=latest)
+[![Documentation Status](https://readthedocs.org/projects/predictgbm/badge/?version=latest)](https://predictgbm.readthedocs.io/?badge=latest)
 [![tests](https://github.com/BrainLesion/PredictGBM/actions/workflows/tests.yml/badge.svg)](https://github.com/BrainLesion/PredictGBM/actions/workflows/tests.yml)
-<!-- [![codecov](https://codecov.io/gh/BrainLesion/predict-gbm/graph/badge.svg?token=A7FWUKO9Y4)](https://codecov.io/gh/BrainLesion/predict-gbm) -->
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+<!-- [![codecov](https://codecov.io/gh/BrainLesion/predict-gbm/graph/badge.svg?token=A7FWUKO9Y4)](https://codecov.io/gh/BrainLesion/predict-gbm) -->
 
 Providing a unified framework for evaluating and benchmarking glioblastoma models by assessing radiation plan coverage on recurrences observed in follow-up MRI exams.
 ## Features
