@@ -1,3 +1,4 @@
+import shutil
 import tempfile
 import unittest
 import warnings
@@ -5,12 +6,19 @@ from pathlib import Path
 from tests.helpers import generate_mock_dicom_series
 from predict_gbm.preprocessing.dicom_to_nifti import dicom_to_nifti
 
-
 # Silence third-party warnings that clutter test output
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
+REQUIRED_BINARY = "dcm2niix"
+class_skip = unittest.skipUnless(
+    shutil.which(REQUIRED_BINARY) is not None,
+    reason=f"Skipping: '{REQUIRED_BINARY}' is not installed on this machine.",
+)
+
+
+@class_skip
 class TestDicomToNifti(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
