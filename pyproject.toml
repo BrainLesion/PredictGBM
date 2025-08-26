@@ -7,7 +7,7 @@ enable = true
 
 [tool.poetry]
 name = "predict-gbm"
-version = "0.1.0"  # overwritten by dynamic versioning but required for poetry
+version = "0.0.1"  # overwritten by dynamic versioning but required for poetry
 description = "Tools for processing MRI images and evaluating tumor growth models via radiation plans."
 authors = ["Lucas Zimmer <zimmer.lucas.w@gmail.com>"]
 repository = "https://github.com/BrainLesion/PredictGBM"
