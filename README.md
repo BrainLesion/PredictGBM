@@ -21,13 +21,10 @@ Prerequisites:
 - **NVIDIA Container Toolkit**: Refer to the [NVIDIA install guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) and the official [GitHub page](https://github.com/NVIDIA/nvidia-container-toolkit)
 - **dicom2niix**: Required if you plan to process raw DICOM data.
 
-A pypi package will be available soon. Currently, the package can be installed with poetry:
+The package can be installed via pypi:
 
 ```bash
-curl -sSL https://install.python-poetry.org | python3 -
-git clone https://github.com/BrainLesion/PredictGBM
-cd PredictGBM
-poetry install
+pip install predict-gbm
 ```
 
 ## Data and Models
