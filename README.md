@@ -29,7 +29,7 @@ pip install predict-gbm
 
 ## Data and models
 
-Preprocessed data can be obtained from [TODO]()
+Preprocessed data can be obtained from [huggingface](https://huggingface.co/datasets/LZimmer/PREDICT-GBM).
 
 Ready-to-use dockered versions are available for some growth models from [TODO](). Placing them in `predict_gbm/models/` just like the `test_model.tar`, allows you to use them via `algo_id="test_model"`. 
 
