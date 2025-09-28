@@ -10,7 +10,6 @@ if __name__ == "__main__":
     parser.add_argument("-cuda_device", type=str, default="0", help="GPU id to run on.")
     args = parser.parse_args()
 
-    dcm2niix_location = Path("/home/home/lucas/bin/dcm2niix")
     model_id = "sbtc"
 
     patient_root_dir = Path(
