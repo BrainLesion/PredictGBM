@@ -75,6 +75,12 @@ class BasePreprocessor:
         logger.info("Starting preprocessing.")
 
         if self.perform_coregistration:
+            adc_converted_file = MODALITY_CONVERTED_SCHEMA.format(
+                base_dir=self.outdir, modality="adc"
+            )
+            if adc_converted_file.exists():
+                norm_ss_coregister_kwargs = {"adc_file": adc_converted_file}
+
             norm_ss_coregister(
                 t1_file=MODALITY_CONVERTED_SCHEMA.format(
                     base_dir=self.outdir, modality="t1"
@@ -90,6 +96,7 @@ class BasePreprocessor:
                 ),
                 skull_strip=self.perform_skull_stripping,
                 outdir=self.outdir,
+                **norm_ss_coregister_kwargs,
             )
 
         if self.perform_tumorseg:
@@ -177,6 +184,7 @@ class DicomPreprocessor(BasePreprocessor):
         outdir: Path,
         dcm2niix_location: Path = Path("dcm2niix"),
         cuda_device: str = "0",
+        adc_dir: Optional[Path] = None,
     ) -> None:
         super().__init__(
             outdir=outdir,
@@ -191,6 +199,7 @@ class DicomPreprocessor(BasePreprocessor):
         self.t1c_dir = t1c_dir
         self.t2_dir = t2_dir
         self.flair_dir = flair_dir
+        self.adc_dir = adc_dir
         self.dcm2niix_location = dcm2niix_location
 
     def run(self) -> None:
@@ -206,6 +215,10 @@ class DicomPreprocessor(BasePreprocessor):
             "t2": self.t2_dir,
             "flair": self.flair_dir,
         }
+
+        if self.adc_dir is not None:
+            dicom_modalities["adc"] = self.adc_dir
+
         for modality_name, dicom_dir in dicom_modalities.items():
             # remove suffixes because dcm2niix adds them automatically
             outfile_tmp = (
@@ -256,6 +269,7 @@ class NiftiPreprocessor(BasePreprocessor):
         is_coregistered: bool,
         is_skull_stripped: bool,
         tumorseg_file: Optional[Path] = None,
+        adc_file: Optional[Path] = None,
         cuda_device: str = "0",
     ) -> None:
         super().__init__(
@@ -271,6 +285,7 @@ class NiftiPreprocessor(BasePreprocessor):
         self.t1c_file = t1c_file
         self.t2_file = t2_file
         self.flair_file = flair_file
+        self.adc_file = adc_file
         self.is_coregistered = is_coregistered
         self.is_skull_stripped = is_skull_stripped
         self.tumorseg_file = tumorseg_file
@@ -285,6 +300,9 @@ class NiftiPreprocessor(BasePreprocessor):
             "t2": self.t2_file,
             "flair": self.flair_file,
         }
+
+        if self.adc_file is not None:
+            modality_dict["adc"] = self.adc_file
 
         if self.is_coregistered:
             logger.info("Running with provided skull stripped modality images.")

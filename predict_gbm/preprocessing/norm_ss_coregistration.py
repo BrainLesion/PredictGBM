@@ -3,7 +3,7 @@ import time
 import shutil
 from pathlib import Path
 from loguru import logger
-from typing import List
+from typing import List, Optional
 from brainles_preprocessing.normalization import Normalizer
 from brainles_preprocessing.preprocessor import AtlasCentricPreprocessor
 from brainles_preprocessing.registration import ANTsRegistrator
@@ -141,6 +141,7 @@ def norm_ss_coregister(
     t2_file: Path,
     flair_file: Path,
     outdir: Path,
+    adc_file: Optional[Path] = None,
     skull_strip: bool = True,
 ) -> None:
     """
@@ -178,9 +179,17 @@ def norm_ss_coregister(
         outdir=str(outdir),
         skull_strip=skull_strip,
     )
+
+    modality_files = [str(t1_file), str(t2_file), str(flair_file)]
+    modality_names = ["t1", "t2", "flair"]
+
+    if adc_file is not None:
+        modality_files.append(str(adc_file))
+        modality_names.append("adc")
+
     moving = initialize_moving_modalities(
-        modality_files=[str(t1_file), str(t2_file), str(flair_file)],
-        modality_names=["t1", "t2", "flair"],
+        modality_files=modality_files,
+        modality_names=modality_names,
         normalizer=percentile_normalizer,
         outdir=str(outdir),
         skull_strip=skull_strip,
