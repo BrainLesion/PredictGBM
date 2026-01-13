@@ -204,7 +204,11 @@ def evaluate_tumor_model(
         )
 
     # Brain masking
-    affine = nib.load(str(t1c_file)).affine
+    if t1c_file is not None:
+        affine = nib.load(str(t1c_file)).affine
+    else:
+        affine = nib.load(str(brain_mask_file)).affine
+        
     if brain_mask_file is None:
         t1c = load_mri_data(str(t1c_file))
         background = np.min(t1c)
