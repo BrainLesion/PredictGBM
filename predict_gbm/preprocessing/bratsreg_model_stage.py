@@ -1,19 +1,12 @@
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import nibabel as nib
-from medpy.io import load
 
-from predict_gbm.preprocessing.dirac_functions import (
-    generate_grid,
-    save_img,
-    generate_grid_unit,
-    transform_unit_flow_to_flow_cuda,
-)
+from predict_gbm.preprocessing.dirac_functions import generate_grid_unit
 import numpy as np
-
-import os
-import matplotlib.pyplot as plt
+from scipy.spatial.distance import pdist
+from scipy.ndimage import gaussian_filter as smooth
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
@@ -2046,19 +2039,13 @@ class SpatialTransform(nn.Module):
         sample_grid = sample_grid + flow
         size_tensor = sample_grid.size()
         sample_grid[0, :, :, :, 0] = (
-            (sample_grid[0, :, :, :, 0] - ((size_tensor[3] - 1) / 2))
-            / (size_tensor[3] - 1)
-            * 2
+            (sample_grid[0, :, :, :, 0] - ((size_tensor[3] - 1) / 2)) / (size_tensor[3] - 1) * 2
         )
         sample_grid[0, :, :, :, 1] = (
-            (sample_grid[0, :, :, :, 1] - ((size_tensor[2] - 1) / 2))
-            / (size_tensor[2] - 1)
-            * 2
+            (sample_grid[0, :, :, :, 1] - ((size_tensor[2] - 1) / 2)) / (size_tensor[2] - 1) * 2
         )
         sample_grid[0, :, :, :, 2] = (
-            (sample_grid[0, :, :, :, 2] - ((size_tensor[1] - 1) / 2))
-            / (size_tensor[1] - 1)
-            * 2
+            (sample_grid[0, :, :, :, 2] - ((size_tensor[1] - 1) / 2)) / (size_tensor[1] - 1) * 2
         )
         flow = torch.nn.functional.grid_sample(
             x, sample_grid, mode="bilinear", padding_mode="border", align_corners=True
@@ -2092,19 +2079,13 @@ class SpatialTransformNearest(nn.Module):
         sample_grid = sample_grid + flow
         size_tensor = sample_grid.size()
         sample_grid[0, :, :, :, 0] = (
-            (sample_grid[0, :, :, :, 0] - ((size_tensor[3] - 1) / 2))
-            / (size_tensor[3] - 1)
-            * 2
+            (sample_grid[0, :, :, :, 0] - ((size_tensor[3] - 1) / 2)) / (size_tensor[3] - 1) * 2
         )
         sample_grid[0, :, :, :, 1] = (
-            (sample_grid[0, :, :, :, 1] - ((size_tensor[2] - 1) / 2))
-            / (size_tensor[2] - 1)
-            * 2
+            (sample_grid[0, :, :, :, 1] - ((size_tensor[2] - 1) / 2)) / (size_tensor[2] - 1) * 2
         )
         sample_grid[0, :, :, :, 2] = (
-            (sample_grid[0, :, :, :, 2] - ((size_tensor[1] - 1) / 2))
-            / (size_tensor[1] - 1)
-            * 2
+            (sample_grid[0, :, :, :, 2] - ((size_tensor[1] - 1) / 2)) / (size_tensor[1] - 1) * 2
         )
         flow = torch.nn.functional.grid_sample(
             x, sample_grid, mode="nearest", padding_mode="border", align_corners=True
@@ -2142,19 +2123,13 @@ class DiffeomorphicTransform(nn.Module):
         for _ in range(self.time_step):
             grid = sample_grid + (flow.permute(0, 2, 3, 4, 1) * range_flow)
             grid[0, :, :, :, 0] = (
-                (grid[0, :, :, :, 0] - ((size_tensor[3] - 1) / 2))
-                / (size_tensor[3] - 1)
-                * 2
+                (grid[0, :, :, :, 0] - ((size_tensor[3] - 1) / 2)) / (size_tensor[3] - 1) * 2
             )
             grid[0, :, :, :, 1] = (
-                (grid[0, :, :, :, 1] - ((size_tensor[2] - 1) / 2))
-                / (size_tensor[2] - 1)
-                * 2
+                (grid[0, :, :, :, 1] - ((size_tensor[2] - 1) / 2)) / (size_tensor[2] - 1) * 2
             )
             grid[0, :, :, :, 2] = (
-                (grid[0, :, :, :, 2] - ((size_tensor[1] - 1) / 2))
-                / (size_tensor[1] - 1)
-                * 2
+                (grid[0, :, :, :, 2] - ((size_tensor[1] - 1) / 2)) / (size_tensor[1] - 1) * 2
             )
             flow = flow + F.grid_sample(
                 flow, grid, mode="bilinear", padding_mode="border", align_corners=True
@@ -2190,25 +2165,18 @@ class CompositionTransform(nn.Module):
         size_tensor = sample_grid.size()
         grid = sample_grid + (flow_1.permute(0, 2, 3, 4, 1) * range_flow)
         grid[0, :, :, :, 0] = (
-            (grid[0, :, :, :, 0] - ((size_tensor[3] - 1) / 2))
-            / (size_tensor[3] - 1)
-            * 2
+            (grid[0, :, :, :, 0] - ((size_tensor[3] - 1) / 2)) / (size_tensor[3] - 1) * 2
         )
         grid[0, :, :, :, 1] = (
-            (grid[0, :, :, :, 1] - ((size_tensor[2] - 1) / 2))
-            / (size_tensor[2] - 1)
-            * 2
+            (grid[0, :, :, :, 1] - ((size_tensor[2] - 1) / 2)) / (size_tensor[2] - 1) * 2
         )
         grid[0, :, :, :, 2] = (
-            (grid[0, :, :, :, 2] - ((size_tensor[1] - 1) / 2))
-            / (size_tensor[1] - 1)
-            * 2
+            (grid[0, :, :, :, 2] - ((size_tensor[1] - 1) / 2)) / (size_tensor[1] - 1) * 2
         )
         compos_flow = (
             F.grid_sample(
                 flow_2, grid, mode="bilinear", padding_mode="border", align_corners=True
-            )
-            + flow_1
+            ) + flow_1
         )
         return compos_flow
 
@@ -2226,8 +2194,7 @@ class CompositionTransform_unit(nn.Module):
         compos_flow = (
             F.grid_sample(
                 flow_1, grid, mode="bilinear", padding_mode="border", align_corners=True
-            )
-            + flow_2
+            ) + flow_2
         )
         return compos_flow
 
@@ -2260,9 +2227,9 @@ def weighted_smoothloss(y_pred, weight):
     dz = torch.abs(y_pred[:, :, :, :, 1:] - y_pred[:, :, :, :, :-1])
 
     return (
-        torch.mean(weight[:, :, :, 1:, :] * (dx * dx))
-        + torch.mean(weight[:, :, 1:, :, :] * (dy * dy))
-        + torch.mean(weight[:, :, :, :, 1:] * (dz * dz))
+        torch.mean(weight[:, :, :, 1:, :] * (dx * dx)) +
+        torch.mean(weight[:, :, 1:, :, :] * (dy * dy)) +
+        torch.mean(weight[:, :, :, :, 1:] * (dz * dz))
     ) / 3.0
 
 
@@ -2616,17 +2583,17 @@ class mindssc_loss(torch.nn.Module):
         )
         mshift1 = torch.zeros((12, 1, 3, 3, 3), device=device)
         mshift1.view(-1)[
-            torch.arange(12, device=device) * 27
-            + idx_shift1[:, 0] * 9
-            + idx_shift1[:, 1] * 3
-            + idx_shift1[:, 2]
+            torch.arange(12, device=device) * 27 +
+            idx_shift1[:, 0] * 9 +
+            idx_shift1[:, 1] * 3 +
+            idx_shift1[:, 2]
         ] = 1
         mshift2 = torch.zeros((12, 1, 3, 3, 3), device=device)
         mshift2.view(-1)[
-            torch.arange(12, device=device) * 27
-            + idx_shift2[:, 0] * 9
-            + idx_shift2[:, 1] * 3
-            + idx_shift2[:, 2]
+            torch.arange(12, device=device) * 27 +
+            idx_shift2[:, 0] * 9 +
+            idx_shift2[:, 1] * 3 +
+            idx_shift2[:, 2]
         ] = 1
         rpad = nn.ReplicationPad3d(delta)
 
@@ -2634,10 +2601,9 @@ class mindssc_loss(torch.nn.Module):
         ssd = smooth(
             (
                 (
-                    F.conv3d(rpad(img), mshift1, dilation=delta)
-                    - F.conv3d(rpad(img), mshift2, dilation=delta)
-                )
-                ** 2
+                    F.conv3d(rpad(img), mshift1, dilation=delta) -
+                    F.conv3d(rpad(img), mshift2, dilation=delta)
+                ) ** 2
             ),
             sigma,
         )
@@ -2665,10 +2631,9 @@ class mindssc_loss(torch.nn.Module):
     def forward(self, x, y):
         return torch.mean(
             (
-                self.mindssc(x, delta=self.delta, sigma=self.sigma)
-                - self.mindssc(y, delta=self.delta, sigma=self.sigma)
-            )
-            ** 2
+                self.mindssc(x, delta=self.delta, sigma=self.sigma) -
+                self.mindssc(y, delta=self.delta, sigma=self.sigma)
+            ) ** 2
         )
 
 
@@ -2688,9 +2653,7 @@ class MSE(torch.nn.Module):
             )
         else:
             return (
-                1.0
-                / (self.image_sigma**2)
-                * torch.mean(torch.square(y_true - y_pred) * weight_map)
+                1.0 / (self.image_sigma**2) * torch.mean(torch.square(y_true - y_pred) * weight_map)
             )
 
 
@@ -3279,16 +3242,16 @@ class DemonsOrientation(nn.Module):
 
         # Demon force.
         Ux = Idiff * (
-            (Sx / (Sxyz_mag + (self.alpha**2) * (Idiff**2) + 1e-10))
-            + (Mx / (Mxyz_mag + (self.alpha**2) * (Idiff**2) + 1e-10))
+            (Sx / (Sxyz_mag + (self.alpha**2) * (Idiff**2) + 1e-10)) +
+            (Mx / (Mxyz_mag + (self.alpha**2) * (Idiff**2) + 1e-10))
         )
         Uy = Idiff * (
-            (Sy / (Sxyz_mag + (self.alpha**2) * (Idiff**2) + 1e-10))
-            + (My / (Mxyz_mag + (self.alpha**2) * (Idiff**2) + 1e-10))
+            (Sy / (Sxyz_mag + (self.alpha**2) * (Idiff**2) + 1e-10)) +
+            (My / (Mxyz_mag + (self.alpha**2) * (Idiff**2) + 1e-10))
         )
         Uz = Idiff * (
-            (Sz / (Sxyz_mag + (self.alpha**2) * (Idiff**2) + 1e-10))
-            + (Mz / (Mxyz_mag + (self.alpha**2) * (Idiff**2) + 1e-10))
+            (Sz / (Sxyz_mag + (self.alpha**2) * (Idiff**2) + 1e-10)) +
+            (Mz / (Mxyz_mag + (self.alpha**2) * (Idiff**2) + 1e-10))
         )
 
         # demons_force = torch.cat([Ux, Uy, Uz], dim=1)

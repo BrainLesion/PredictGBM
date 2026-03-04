@@ -1,6 +1,9 @@
+import nibabel as nib
+import numpy as np
 from pathlib import Path
 from loguru import logger
 from typing import Optional
+from scipy.ndimage import binary_fill_holes
 from predict_gbm.base import BasePipe
 from predict_gbm.prediction.growth_model import TumorGrowthModel
 from predict_gbm.utils.constants import (
@@ -85,10 +88,38 @@ class PredictTumorGrowthPipe(BasePipe):
         self.model_id = model_id
         self.outdir = outdir or preop_dir
 
+    def _ensure_brain_mask(self, t1c_file: Path, brain_mask_file: Path) -> None:
+        """Create a brain mask from t1c if the expected mask file is missing."""
+        if brain_mask_file.exists():
+            return
+
+        if not t1c_file.exists():
+            raise FileNotFoundError(
+                f"Missing brain mask ({brain_mask_file}) and t1c file ({t1c_file}) required to create fallback mask."
+            )
+
+        logger.info(
+            f"Brain mask missing at {brain_mask_file}. Creating fallback mask from {t1c_file}."
+        )
+        t1c = nib.load(str(t1c_file))
+        data, affine = t1c.get_fdata(), t1c.affine
+        background = np.min(data)
+        brain_mask = np.rint(data > background)
+        brain_mask = binary_fill_holes(brain_mask.astype(bool)).astype(np.int32)
+
+        brain_mask_file.parent.mkdir(parents=True, exist_ok=True)
+        nib.save(nib.Nifti1Image(brain_mask, affine, t1c.header), str(brain_mask_file))
+
     def run(self) -> None:  # pragma: no cover - wrapper tested via pipeline
         logger.info(
             f"Starting growth prediction on {self.preop_dir} with {self.model_id}."
         )
+
+        t1c_file = MODALITY_STRIPPED_SCHEMA.format(
+            base_dir=self.preop_dir, modality="t1c"
+        )
+        brain_mask_file = BRAIN_MASK_SCHEMA.format(base_dir=self.preop_dir)
+        self._ensure_brain_mask(t1c_file=t1c_file, brain_mask_file=brain_mask_file)
 
         model_kwargs = {
             "gm": TISSUE_PBMAP_SCHEMA.format(base_dir=self.preop_dir, tissue="gm"),

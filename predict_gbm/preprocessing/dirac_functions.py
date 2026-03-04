@@ -8,7 +8,6 @@ import nibabel as nib
 import torch
 import torch.nn.functional as F
 
-import glob
 import itertools
 import csv
 import scipy.ndimage
@@ -192,7 +191,7 @@ def load_4D(name):
 
 def load_5D(name):
     # X = sitk.GetArrayFromImage(sitk.ReadImage(name, sitk.sitkFloat32 ))
-    X = fixed_nii = nib.load(name)
+    X = nib.load(name)
     X = X.get_fdata()
     X = np.reshape(X, (1,) + (1,) + X.shape)
     return X
@@ -1031,15 +1030,15 @@ class Dataset_epoch_DIRLab(Data.Dataset):
 
         img_A = img_A[
             :,
-            s_x : s_x + patch_size[0],
-            s_y : s_y + patch_size[1],
-            s_z : s_z + patch_size[2],
+            s_x: s_x + patch_size[0],
+            s_y: s_y + patch_size[1],
+            s_z: s_z + patch_size[2],
         ]
         img_B = img_B[
             :,
-            s_x : s_x + patch_size[0],
-            s_y : s_y + patch_size[1],
-            s_z : s_z + patch_size[2],
+            s_x: s_x + patch_size[0],
+            s_y: s_y + patch_size[1],
+            s_z: s_z + patch_size[2],
         ]
 
         return torch.from_numpy(img_A).float(), torch.from_numpy(img_B).float()
@@ -1591,7 +1590,6 @@ class Validation_Brats_all4_with_mask_submission(Data.Dataset):
         moved_reader = csv.reader(mov_file)
         next(moved_reader)
 
-        fixed_key_list = []
         moved_key_list = []
 
         for mov_line in moved_reader:
@@ -1950,7 +1948,6 @@ class Validation_Brats_all_submission(Data.Dataset):
         moved_reader = csv.reader(mov_file)
         next(moved_reader)
 
-        fixed_key_list = []
         moved_key_list = []
 
         for mov_line in moved_reader:
@@ -2042,8 +2039,6 @@ class Validation_Brats_all_id(Data.Dataset):
         moved_key_list = []
 
         for mov_line, fixed_line in zip(moved_reader, fixed_reader):
-            # moved_key_list.append([float(mov_line[1]), float(mov_line[2])+239., float(mov_line[3])])
-            # fixed_key_list.append([float(fixed_line[1]), float(fixed_line[2])+239., float(fixed_line[3])])
             moved_key_list.append(
                 [
                     239.0 - float(mov_line[1]),

@@ -7,7 +7,6 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.utils.data as Data
-from scipy.ndimage import map_coordinates
 
 from predict_gbm.preprocessing.dirac_functions import (
     Validation_Brats,
@@ -138,16 +137,6 @@ def test():
         param.volatile = True
 
     # Validation
-    start, end = 0, 20
-    # val_fixed_list = sorted(glob.glob(f"{datapath}/BraTSReg_*/*_0000_t1ce.nii.gz"))[-20:]
-    # val_moving_list = sorted(glob.glob(f"{datapath}/BraTSReg_*/*_t1ce.nii.gz"))[-40:]
-    # val_moving_list = sorted([path for path in val_moving_list if path not in val_fixed_list])
-    #
-    # val_fixed_csv_list = sorted(glob.glob(f"{datapath}/BraTSReg_*/*_0000_landmarks.csv"))[-20:]
-    # val_moving_csv_list = sorted(glob.glob(f"{datapath}/BraTSReg_*/*_landmarks.csv"))[-40:]
-    # val_moving_csv_list = sorted([path for path in val_moving_csv_list if path not in val_fixed_csv_list])
-    # tumor_list = sorted(glob.glob(f"{datapath}/BraTSReg_*/*_0000_seg.nii.gz"))[-20:]
-
     val_fixed_list = sorted(glob.glob(f"{datapath}/*/t1c_bet_normalized.nii.gz"))
     val_moving_list = sorted(
         glob.glob(f"{datapath}/*/t1c_bet_normalized_followup.nii.gz")
@@ -168,8 +157,6 @@ def test():
         num_workers=2,
     )
 
-    # dice_total = []
-    tre_total = []
     print("\nValiding...")
     for batch_idx, data in enumerate(valid_generator):
         fixed_image_path = val_fixed_list[batch_idx]
@@ -359,32 +346,7 @@ def test():
             full_F_X_Y[0, 1] = F_X_Y[0, 1] * (w - 1) / 2
             full_F_X_Y[0, 2] = F_X_Y[0, 0] * (d - 1) / 2
 
-            # TRE
-            """
-            full_F_X_Y = full_F_X_Y.cpu().numpy()[0]
-
-            fixed_keypoints = Y_label
-            moving_keypoints = X_label
-
-            moving_disp_x = map_coordinates(full_F_X_Y[0], moving_keypoints.transpose())
-            moving_disp_y = map_coordinates(full_F_X_Y[1], moving_keypoints.transpose())
-            moving_disp_z = map_coordinates(full_F_X_Y[2], moving_keypoints.transpose())
-            lms_moving_disp = np.array((moving_disp_x, moving_disp_y, moving_disp_z)).transpose()
-
-            warped_moving_keypoint = moving_keypoints + lms_moving_disp
-
-            tre_score = compute_tre(warped_moving_keypoint, fixed_keypoints,
-                                    spacing=(1., 1., 1.)).mean()
-            tre_total.append(tre_score)
-
-            print(batch_idx, ": TRE: ", tre_score)
-            """
-
     print("Done.")
-    # tre_total = np.array(tre_total)
-    # print("TRE mean: ", tre_total.mean())
-    # with open(log_dir, "a") as log:
-    #     log.write(str(step)+":"+str(tre_total.mean()) + "\n")
 
 
 if __name__ == "__main__":
