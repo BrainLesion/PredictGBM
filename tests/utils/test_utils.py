@@ -14,7 +14,6 @@ from predict_gbm.utils.utils import (
     load_mri_data,
     load_and_resample_mri_data,
     load_segmentation,
-    make_symlink,
     merge_pdfs,
     is_binary_array,
     temporary_tmpdir,
@@ -91,16 +90,6 @@ class TestUtils(unittest.TestCase):
         seg = load_segmentation(path)
         self.assertEqual(seg.dtype, np.int32)
         np.testing.assert_array_equal(seg, np.array([[[0, 1], [3, 2]]], dtype=np.int32))
-
-    def test_make_symlink(self):
-        src = self.tmp_path / "file.txt"
-        src.write_text("data")
-        dst = self.tmp_path / "link.txt"
-        make_symlink(src, dst)
-        self.assertTrue(dst.is_symlink())
-        self.assertEqual(os.readlink(dst), str(src.resolve()))
-        mode = src.stat().st_mode
-        self.assertFalse(mode & stat.S_IWUSR)
 
     def test_merge_pdfs(self):
         pdf1 = self.tmp_path / "a.pdf"

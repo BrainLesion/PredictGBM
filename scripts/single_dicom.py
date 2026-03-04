@@ -2,7 +2,6 @@ import argparse
 from pathlib import Path
 from predict_gbm import DicomProcessor
 
-
 if __name__ == "__main__":
     # Example:
     # nohup python -u scripts/single_dicom.py -cuda_device 0 > tmp_test_dicom.out 2>&1 &

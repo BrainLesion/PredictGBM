@@ -4,7 +4,7 @@ import nibabel as nib
 from pathlib import Path
 from loguru import logger
 from typing import Any, Dict, Tuple
-from scipy.ndimage import distance_transform_edt
+from scipy.ndimage import binary_fill_holes, distance_transform_edt
 from predict_gbm.base import BasePipe
 from predict_gbm.evaluation.metrics import recurrence_coverage
 from predict_gbm.utils.utils import (
@@ -48,95 +48,103 @@ def create_standard_plan(core_segmentation: np.ndarray, ctv_margin: int) -> np.n
     return dilated_core.astype(np.int32)
 
 
-def find_threshold(
-    volume: np.ndarray,
-    target_volume: float,
-    tolerance: float = 0.01,
-    initial_threshold: float = 0.2,
-    maxIter: int = 10000,
-):
+def topk_plan(
+    scores: np.ndarray, target_voxels: int, mask: np.ndarray | None = None
+) -> np.ndarray:
     """
-    Compute the threshold that produces a specified volume after masking the input array using the threshold.
+    Generates deterministic iso-volumetric plans by selecting top-k voxels restricted to `mask`.
 
     Parameters:
-        volume (np.ndarray): A NumPy array representing the input volume to be thresholded (tumor cell concentration).
-        target_volume (float): The desired volume size.
-        tolerance (float, optional): The acceptable relative difference between the target volume and the thresholded volume. Default is 0.01 (1%).
-        initial_threshold (float, optional): The starting threshold value for the segmentation. Should be between 0 and 1.
-        max_iter (int, optional): The maximum number of iterations to perform. If the threshold is not found within this number of iterations,
-            the function will terminate.
+        scores (np.ndarray): A NumPy array representing model output.
+        target_voxels (int): The target volume.
+        mask (np.ndarray): A boolean array for candiates to be considered for top-k selection.
 
     Returns:
-        float: The threshold value that segments the volume to match the target volume within the specified tolerance.
-            Returns 1.01 if the threshold exceeds the valid range (0, 1), indicating an "above the model" condition.
-            Returns 0 if the maximum number of iterations is reached without finding a suitable threshold.
+        np.ndarray: A binary NumPy array of the shape of scores representing a radiation plan.
+
     """
+    k = int(target_voxels)
+    out = np.zeros_like(scores, dtype=np.int32)
+    if k <= 0:
+        return out
 
-    if np.sum(volume > 0) < target_volume:
-        print("Volume is too small")
-        return 0
+    if mask is None:
+        candidates = np.arange(scores.size, dtype=np.int64)
+    else:
+        m = mask.astype(bool, copy=False)
+        candidates = np.flatnonzero(m)
 
-    # Define the initial threshold, step, and previous direction
-    threshold = initial_threshold
-    step = 0.1
-    previous_direction = None
+    n_cand = int(candidates.size)
+    if n_cand == 0:
+        return out
 
-    # Calculate the current volume
-    current_volume = np.sum(volume > threshold)
+    if k >= n_cand:
+        out.flat[candidates] = 1
+        return out
 
-    # Iterate until the current volume is within the tolerance of the target volume
-    while abs(current_volume - target_volume) / target_volume > tolerance:
-        # Determine the current direction
-        if current_volume > target_volume:
-            direction = "increase"
-        else:
-            direction = "decrease"
+    s = scores.astype(np.float32, copy=False)
+    s_cand = s.flat[candidates]
+    s_cand = np.nan_to_num(
+        s_cand, nan=-np.inf, posinf=np.finfo(np.float32).max, neginf=-np.inf
+    )
 
-        # Adjust the threshold
-        if direction == "increase":
-            threshold += step
-        else:
-            threshold -= step
+    # Pass 1: top-K on scores within candidates
+    order = np.argsort(s_cand, kind="stable")
+    chosen = candidates[order[-k:]]
+    out.flat[chosen] = 1
 
-        # Check if the threshold is out of bounds
-        if threshold < 0 or threshold > 1:
-            return 1.01  # above the model
+    # If top-K contains any non-positive or non-finite entries, use fade fallback
+    sel = s_cand[order[-k:]]
+    needs_fade = np.any(sel <= 0) or np.any(~np.isfinite(sel))
+    if not needs_fade:
+        return out
 
-        # Update the current volume
-        current_volume = np.sum(volume > threshold)
+    # Pass 2: binarize -> fade -> top-K within candidates
+    if mask is None:
+        binary = (scores > 0).astype(np.int32)
+    else:
+        binary = ((scores > 0) & m).astype(np.int32)
 
-        # Reduce the step size if the direction has alternated
-        if previous_direction and previous_direction != direction:
-            step *= 0.5
+    fade = generate_distance_fade_mask(binary).astype(np.float32, copy=False)
+    fade_cand = fade.flat[candidates]
+    fade_cand = np.nan_to_num(
+        fade_cand, nan=-np.inf, posinf=np.finfo(np.float32).max, neginf=-np.inf
+    )
 
-        # Update the previous direction
-        previous_direction = direction
+    order_f = np.argsort(fade_cand, kind="stable")
+    chosen_f = candidates[order_f[-k:]]
 
-        maxIter -= 1
-        if maxIter < 0:
-            print("Max Iter reached, no threshold found")
-            return 0
-
-    return threshold
+    out2 = np.zeros_like(scores, dtype=np.int32)
+    out2.flat[chosen_f] = 1
+    return out2
 
 
 def generate_distance_fade_mask(binary_model_prediction: np.ndarray) -> np.ndarray:
-    """Generates a fade out from a binary segmentation. Output is 1 in the segmentation and then falls off to 0."""
     if not is_binary_array(binary_model_prediction):
         raise ValueError(
-            "Model prediction is not binary: {np.unique(binary_model_prediction)}"
+            f"Model prediction is not binary: {np.unique(binary_model_prediction)}"
         )
 
     data = np.rint(binary_model_prediction).astype(np.int32)
+    inside = data != 0
+
+    if inside.sum() == 0:
+        return np.zeros_like(data, dtype=np.float32)
+
+    if inside.sum() == data.size:
+        return np.ones_like(data, dtype=np.float32)
 
     # Compute distance transform on background
-    distance = distance_transform_edt(data == 0)
+    distance = distance_transform_edt(~inside)
 
-    # Normalize distances to [0, 1] and invert: closer to mask = higher value
-    max_dist = np.max(distance) if distance.max() > 0 else 1.0
-    fade = 1 - (distance / max_dist)
+    # Normalize distances to [0, 1] and invert (closer to mask = higher value)
+    max_dist = float(distance.max())
+    if max_dist <= 0:
+        fade = np.zeros_like(distance, dtype=np.float32)
+    else:
+        fade = 1.0 - (distance / max_dist)
 
-    fade[data == 1] = 1  # Ensure mask stays at 1
+    fade[inside] = 1.0  # set inside to 1
     return fade.astype(np.float32)
 
 
@@ -146,7 +154,7 @@ def generate_distance_fade_mask_no_plateau(
     """Generates a fade out from 1.0 in the center of a binary segmentation to 0.0. The lower limit within the segmentation can be set."""
     if not is_binary_array(binary_model_prediction):
         raise ValueError(
-            "Model prediction is not binary: {np.unique(binary_model_prediction)}"
+            f"Model prediction is not binary: {np.unique(binary_model_prediction)}"
         )
 
     data = np.rint(binary_model_prediction).astype(np.int32)
@@ -204,13 +212,18 @@ def evaluate_tumor_model(
         )
 
     # Brain masking
-    affine = nib.load(str(t1c_file)).affine
+    if t1c_file is not None:
+        affine = nib.load(str(t1c_file)).affine
+    else:
+        affine = nib.load(str(brain_mask_file)).affine
+
     if brain_mask_file is None:
         t1c = load_mri_data(str(t1c_file))
         background = np.min(t1c)
         brain_mask = np.rint(t1c > background)
     else:
         brain_mask = load_segmentation(brain_mask_file)
+    brain_mask = binary_fill_holes(brain_mask.astype(bool)).astype(np.int32)
 
     # CSF masking
     if csf_mask:
@@ -221,7 +234,7 @@ def evaluate_tumor_model(
         tissue_segmentation = load_segmentation(tissue_segmentation_file)
         brain_mask[tissue_segmentation == TISSUE_LABELS["csf"]] = 0
 
-    # Load tumor/recurrence ROIs, explicit code for fast adjustments
+    # Load tumor/recurrence ROIs, explicit code
     core_segmentation = load_segmentation(tumorseg_file)
     core_segmentation[core_segmentation == 2] = 0  # ignore edma
     core_segmentation[core_segmentation == 3] = 1
@@ -246,7 +259,8 @@ def evaluate_tumor_model(
         logger.info(
             f"Prediction {str(pred_file)} is binary. Generating distance fade for radiation planning."
         )
-        model_prediction = generate_distance_fade_mask_no_plateau(model_prediction)
+        model_prediction = generate_distance_fade_mask(model_prediction)
+    model_prediction = np.clip(model_prediction, 0.0, 1.0)
 
     # Create standard plan
     standard_plan = create_standard_plan(core_segmentation, ctv_margin)
@@ -255,11 +269,12 @@ def evaluate_tumor_model(
     standard_plan_nii = nib.Nifti1Image(standard_plan, affine=affine)
 
     # Create model based plan
-    tumor_threshold = find_threshold(
-        model_prediction, standard_plan_volume, initial_threshold=0.2
+    model_plan = topk_plan(
+        scores=model_prediction,
+        target_voxels=int(standard_plan_volume),
+        mask=brain_mask,
     )
-    model_plan = (model_prediction > tumor_threshold).astype(np.int32)
-    model_plan[brain_mask == 0] = 0
+
     model_plan_nii = nib.Nifti1Image(model_plan, affine=affine)
 
     # Compute coverage

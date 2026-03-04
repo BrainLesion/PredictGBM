@@ -2,7 +2,6 @@ import argparse
 from pathlib import Path
 from predict_gbm import NiftiProcessor
 
-
 if __name__ == "__main__":
     # Example:
     # nohup python -u scripts/single_nifti.py -cuda_device 0 > tmp_test_nifti.out 2>&1 &

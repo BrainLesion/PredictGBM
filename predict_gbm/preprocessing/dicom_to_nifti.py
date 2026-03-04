@@ -5,6 +5,15 @@ from pathlib import Path
 from loguru import logger
 
 
+def _strip_nifti_suffix(filename: str) -> str:
+    """Return filename without a trailing .nii.gz or .nii extension."""
+    if filename.endswith(".nii.gz"):
+        return filename[: -len(".nii.gz")]
+    if filename.endswith(".nii"):
+        return filename[: -len(".nii")]
+    return filename
+
+
 def remove_postfixes(export_dir: Path) -> None:
     """Remove postfixes created by dcm2niix (e.g. '_real') from filenames in the given directory."""
     for f in export_dir.iterdir():
@@ -26,10 +35,11 @@ def dicom_to_nifti(
     """Convert DICOM files to NIfTI format using dcm2niix."""
     try:
         outfile.parent.mkdir(parents=True, exist_ok=True)
+        output_basename = _strip_nifti_suffix(outfile.name)
         cmd_readable = (
             str(dcm2niix_location)
             + " -d 9 -f "
-            + str(outfile.name)
+            + output_basename
             + " -z y -o"
             + ' "'
             + str(outfile.parent)
@@ -41,7 +51,7 @@ def dicom_to_nifti(
         logger.info(f"Running: {cmd_readable}")
         cmd = shlex.split(cmd_readable)
 
-        log_file = outfile.parent / f"{outfile.name}_conversion.log"
+        log_file = outfile.parent / f"{output_basename}_conversion.log"
         with open(log_file, "w", encoding="utf-8") as logf:
             subprocess.run(cmd, stdout=logf, stderr=logf, check=False)
 

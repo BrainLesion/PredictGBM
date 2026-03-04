@@ -6,7 +6,6 @@ from predict_gbm.utils.constants import PREDICT_GBM_DIR
 from predict_gbm.prediction import predict_tumor_growth
 from predict_gbm.evaluation import evaluate_tumor_model
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-cuda_device", type=str, default="0", help="GPU id to run on.")

@@ -4,6 +4,8 @@ from typing import Optional
 from predict_gbm.base import BasePipe
 from predict_gbm.prediction.growth_model import TumorGrowthModel
 from predict_gbm.utils.constants import (
+    BRAIN_MASK_SCHEMA,
+    MODALITY_STRIPPED_SCHEMA,
     TISSUE_PBMAP_SCHEMA,
     TUMORSEG_SCHEMA,
 )
@@ -17,6 +19,10 @@ def predict_tumor_growth(
     model_id: str,
     outdir: Path,
     cuda_device: Optional[str] = "0",
+    t1c_file: Optional[Path] = None,
+    flair_file: Optional[Path] = None,
+    brain_mask_file: Optional[Path] = None,
+    adc_file: Optional[Path] = None,
 ) -> None:
     """
     Predict tumor cell concentration with  model_id as growth model.
@@ -29,6 +35,10 @@ def predict_tumor_growth(
         outdir (Path): Base directory for the model output
         model_id (str): Identifier for the model. Used to load the model.
         cuda_device (str): GPU device to use.
+        t1c_file (Optional[Path]): Path to the skull-stripped and normalized T1c image.
+        flair_file (Optional[Path]): Path to the skull-stripped and normalized FLAIR image.
+        brain_mask_file (Optional[Path]): Path to the skull-stripping brain mask.
+        adc_file (Optional[Path]): Path to the skull-stripped and normalized ADC image.
 
     Returns:
         None
@@ -40,6 +50,10 @@ def predict_tumor_growth(
         "wm": wm_file,
         "csf": csf_file,
         "tumorseg": tumorseg_file,
+        "t1c": t1c_file,
+        "flair": flair_file,
+        "brain_mask": brain_mask_file,
+        "adc": adc_file,
         "outdir": outdir,
     }
 
@@ -81,6 +95,16 @@ class PredictTumorGrowthPipe(BasePipe):
             "wm": TISSUE_PBMAP_SCHEMA.format(base_dir=self.preop_dir, tissue="wm"),
             "csf": TISSUE_PBMAP_SCHEMA.format(base_dir=self.preop_dir, tissue="csf"),
             "tumorseg": TUMORSEG_SCHEMA.format(base_dir=self.preop_dir),
+            "t1c": MODALITY_STRIPPED_SCHEMA.format(
+                base_dir=self.preop_dir, modality="t1c"
+            ),
+            "flair": MODALITY_STRIPPED_SCHEMA.format(
+                base_dir=self.preop_dir, modality="flair"
+            ),
+            "brain_mask": BRAIN_MASK_SCHEMA.format(base_dir=self.preop_dir),
+            "adc": MODALITY_STRIPPED_SCHEMA.format(
+                base_dir=self.preop_dir, modality="adc"
+            ),
             "outdir": self.outdir,
         }
 

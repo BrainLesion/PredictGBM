@@ -97,6 +97,10 @@ class TumorGrowthModel:
         csf: Path,
         tumorseg: Path,
         outdir: Path,
+        t1c: Optional[Path] = None,
+        flair: Optional[Path] = None,
+        brain_mask: Optional[Path] = None,
+        adc: Optional[Path] = None,
         pet: Optional[Path] = None,
         log_file: Optional[Path] = None,
     ) -> None:
@@ -107,11 +111,23 @@ class TumorGrowthModel:
             wm: Path to wm probability map
             csf: Path to csf probability map
             tumorseg: Path to tumor segmentation
+            t1c: Path to t1c image
+            flair: Path to flair image
+            brain_mask: Path to t1c brain mask
+            adc: Path to adc image
             pet: Path to pet image
             outdir: Path to save the segmentation
             log_file: Save logs to this file
         """
         inputs = {"gm": gm, "wm": wm, "csf": csf, "tumorseg": tumorseg}
+        if t1c is not None:
+            inputs["t1c"] = t1c
+        if flair is not None:
+            inputs["flair"] = flair
+        if brain_mask is not None:
+            inputs["brain_mask"] = brain_mask
+        if adc is not None:
+            inputs["adc"] = adc
         if pet is not None:
             inputs["pet"] = pet
 
