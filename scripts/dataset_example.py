@@ -2,7 +2,6 @@ from pathlib import Path
 from predict_gbm.utils.parsing import PatientDataset
 from predict_gbm.utils.constants import RHUH_GBM_DIR, PREDICT_GBM_DIR
 
-
 if __name__ == "__main__":
 
     # Load the dataset from JSON

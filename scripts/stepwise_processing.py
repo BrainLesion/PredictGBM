@@ -1,5 +1,6 @@
 import os
 import argparse
+import nibabel as nib
 from pathlib import Path
 from predict_gbm.preprocessing import dicom_to_nifti
 from predict_gbm.preprocessing import (
@@ -7,11 +8,10 @@ from predict_gbm.preprocessing import (
     register_recurrence,
 )
 from predict_gbm.preprocessing import DicomPreprocessor
-from predict_gbm.preprosessing import run_tissue_seg_registration
+from predict_gbm.preprocessing import run_tissue_seg_registration
 from predict_gbm.preprocessing import run_brats
 from predict_gbm.prediction import predict_tumor_growth
 from predict_gbm.evaluation import evaluate_tumor_model
-
 
 if __name__ == "__main__":
     # Example:
@@ -23,7 +23,6 @@ if __name__ == "__main__":
     os.environ["CUDA_VISIBLE_DEVICES"] = args.cuda_device
 
     model_id = "test_model"
-    patient_id = "RHUH-0001"
     outdir = Path("stepwise")
     outdir.mkdir(parents=True, exist_ok=True)
 
@@ -88,66 +87,58 @@ if __name__ == "__main__":
         t2_file=dicom_conversion_outdir / "t2.nii.gz",
         flair_file=dicom_conversion_outdir / "flair.nii.gz",
         skull_strip=True,
-        outdir=skull_strip_followup_outdir,
+        outdir=outdir_followup,
     )
 
     # Tumor segmentation
-    tumorseg_outdir = outdir_followup / "tumor_segmentation"
-    tumorseg_outdir.mkdir(parents=True, exist_ok=True)
+    tumorseg_file = outdir_followup / "tumor_segmentation" / "tumor_seg.nii.gz"
     run_brats(
         t1_file=skull_strip_followup_outdir / "t1_bet_normalized.nii.gz",
         t1c_file=skull_strip_followup_outdir / "t1c_bet_normalized.nii.gz",
         t2_file=skull_strip_followup_outdir / "t2_bet_normalized.nii.gz",
         flair_file=skull_strip_followup_outdir / "flair_bet_normalized.nii.gz",
-        outdir=tumorseg_outdir,
+        outdir=outdir_followup,
         pre_treatment=False,
         cuda_device=args.cuda_device,
     )
 
     # Tissue segmentation
-    tissueseg_outdir = outdir_followup / "tissue_segmentation"
-    tissueseg_outdir.mkdir(parents=True, exist_ok=True)
     run_tissue_seg_registration(
         t1_file=skull_strip_followup_outdir / "t1c_bet_normalized.nii.gz",
-        outdir=tissueseg_outdir,
+        outdir=outdir_followup,
     )
 
     # Longitudinal registration
-    longitudinal_outdir = outdir_followup / "longitudinal"
-    longitudinal_outdir.mkdir(parents=True, exist_ok=True)
     register_recurrence(
-        t1c_pre_file=outdir_preop
-        / f"{patient_id}/ses-preop/skull_stripped/t1c_bet_normalized.nii.gz",
+        t1c_pre_file=outdir_preop / "skull_stripped/t1c_bet_normalized.nii.gz",
         t1c_post_file=skull_strip_followup_outdir / "t1c_bet_normalized.nii.gz",
-        recurrence_seg_file=tumorseg_outdir / "tumor_seg.nii.gz",
-        outdir=longitudinal_outdir,
+        recurrence_seg_file=tumorseg_file,
+        outdir=outdir_followup,
     )
 
     # 2. PREDICTION
     predict_tumor_growth(
-        tumorseg_file=outdir_preop
-        / f"{patient_id}/ses-preop/tumor_segmentation/tumor_seg.nii.gz",
-        gm_file=outdir_preop
-        / f"{patient_id}/ses-preop/tissue_segmentation/gm_pbmap.nii.gz",
-        wm_file=outdir_preop
-        / f"{patient_id}/ses-preop/tissue_segmentation/wm_pbmap.nii.gz",
-        csf_file=outdir_preop
-        / f"{patient_id}/ses-preop/tissue_segmentation/csf_pbmap.nii.gz",
+        tumorseg_file=outdir_preop / "tumor_segmentation/tumor_seg.nii.gz",
+        gm_file=outdir_preop / "tissue_segmentation/gm_pbmap.nii.gz",
+        wm_file=outdir_preop / "tissue_segmentation/wm_pbmap.nii.gz",
+        csf_file=outdir_preop / "tissue_segmentation/csf_pbmap.nii.gz",
+        t1c_file=outdir_preop / "skull_stripped/t1c_bet_normalized.nii.gz",
+        flair_file=outdir_preop / "skull_stripped/flair_bet_normalized.nii.gz",
+        brain_mask_file=outdir_preop / "skull_stripped/t1c_bet_mask.nii.gz",
         model_id=model_id,
         outdir=outdir_preop,
     )
 
     # 3. EVALUATION
-    outdir_eval = outdir_followup / "eval"
-    outdir_eval.mkdir(parents=True, exist_ok=True)
     pred_file = outdir_preop / f"growth_models/{model_id}/{model_id}_pred.nii.gz"
-    results = evaluate_tumor_model(
-        t1c_file=outdir_preop
-        / f"{patient_id}/ses-preop/skull_stripped/t1c_bet_normalized.nii.gz",
-        tumorseg_file=outdir_preop
-        / f"{patient_id}/ses-preop/tumor_segmentation/tumor_seg.nii.gz",
-        recurrence_file=tumorseg_outdir / "tumor_seg.nii.gz",
+    results, standard_plan, model_plan = evaluate_tumor_model(
+        t1c_file=outdir_preop / "skull_stripped/t1c_bet_normalized.nii.gz",
+        tumorseg_file=outdir_preop / "tumor_segmentation/tumor_seg.nii.gz",
+        recurrence_file=outdir_followup / "longitudinal/recurrence_preop.nii.gz",
         pred_file=pred_file,
         ctv_margin=15,
+    )
+    nib.save(
+        model_plan, f"{outdir_preop}/growth_models/{model_id}/{model_id}_plan.nii.gz"
     )
     print(results)

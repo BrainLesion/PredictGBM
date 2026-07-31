@@ -45,12 +45,13 @@ def split_segmentation(
         np.rint((seg_data == necrotic_label) | (seg_data == enhancing_label)).astype(
             np.int32
         ),
-        affine=np.eye(4),
+        affine=tumor_seg.affine,
     )
 
     # Create a binary mask for edema (label 2).
     edema = nib.Nifti1Image(
-        np.rint(seg_data == edema_label).astype(np.int32), affine=np.eye(4)
+        np.rint(seg_data == edema_label).astype(np.int32),
+        affine=tumor_seg.affine,
     )
 
     nib.save(enhancing_non_enhancing, str(TUMORSEG_CORE_SCHEMA.format(base_dir=outdir)))

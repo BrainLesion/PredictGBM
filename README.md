@@ -108,6 +108,14 @@ If you use PredictGBM in your research, please cite it to support the developmen
 TODO: citation will be added asap
 ```
 
+## Acknowledgements
+
+This project builds on and uses components from the following repositories:
+
+- [BrainLesion/preprocessing](https://github.com/BrainLesion/preprocessing)
+- [BrainLesion/BraTS](https://github.com/BrainLesion/BraTS)
+- [cwmok/DIRAC](https://github.com/cwmok/DIRAC)
+
 ### Reporting Bugs, Feature Requests and Questions
 
 Please open a new issue [here](https://github.com/BrainLesion/PredictGBM/issues).

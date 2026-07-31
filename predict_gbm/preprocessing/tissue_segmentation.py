@@ -43,7 +43,10 @@ def generate_healthy_brain_mask(
 
     # Generate output nifti and save it
     outfile.parent.mkdir(parents=True, exist_ok=True)
-    healthy_mask_nifti = nib.Nifti1Image(healthy_data, affine=np.eye(4))
+    healthy_mask_nifti = nib.Nifti1Image(
+        healthy_data,
+        affine=brain_nifti.affine,
+    )
     nib.save(healthy_mask_nifti, str(outfile))
 
     logger.info(f"Healthy brain mask generated succesfully and saved to {outfile}.")
@@ -72,7 +75,10 @@ def generate_registration_mask(tumor_seg_file: Path, outfile: Path) -> None:
 
     # Save
     outfile.parent.mkdir(parents=True, exist_ok=True)
-    no_tumor_mask_nifti = nib.Nifti1Image(no_tumor_mask, affine=np.eye(4))
+    no_tumor_mask_nifti = nib.Nifti1Image(
+        no_tumor_mask,
+        affine=tumor_nifti.affine,
+    )
     nib.save(no_tumor_mask_nifti, str(outfile))
 
     logger.info(f"Registration mask generated successfully and save to {outfile}.")
@@ -143,10 +149,14 @@ def run_tissue_seg_registration(
 
     # Transform atlas tissue segmentations
     tissues_warped_nifti = nib.load(str(TISSUE_SEG_SCHEMA.format(base_dir=outdir)))
+    tissues_warped_affine = tissues_warped_nifti.affine
     for tissue, label in TISSUE_LABELS.items():
         eq = np.rint(tissues_warped_nifti.get_fdata()).astype(np.int32)
         tissue_mask = (np.isclose(eq, label)).astype(np.int32)
-        tissue_mask_nifti = nib.Nifti1Image(tissue_mask, affine=np.eye(4))
+        tissue_mask_nifti = nib.Nifti1Image(
+            tissue_mask,
+            affine=tissues_warped_affine,
+        )
         nib.save(
             tissue_mask_nifti, str(TISSUE_SCHEMA.format(base_dir=outdir, tissue=tissue))
         )

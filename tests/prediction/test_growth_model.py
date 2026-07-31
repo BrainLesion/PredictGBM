@@ -7,7 +7,6 @@ from tests.helpers import generate_mock_nifti
 from predict_gbm.prediction.growth_model import load_algorithms, TumorGrowthModel
 from predict_gbm.utils.constants import GROWTH_MODEL_DIR, PREDICTION_OUTPUT_SCHEMA
 
-
 # Silence third-party warnings that clutter test output
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=DeprecationWarning)

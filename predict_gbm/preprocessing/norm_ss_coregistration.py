@@ -1,6 +1,7 @@
 import ants
 import time
 import shutil
+import torch
 from pathlib import Path
 from loguru import logger
 from typing import List
@@ -11,10 +12,16 @@ from brainles_preprocessing.modality import Modality, CenterModality
 from brainles_preprocessing.normalization.percentile_normalizer import (
     PercentileNormalizer,
 )
+from predict_gbm.preprocessing.longitudinal_dirac import (
+    apply_longitudinal_warp,
+    resolve_dirac_disp_field,
+    optimize_warp_field,
+    run_dirac_inference,
+)
 from predict_gbm.utils.constants import (
     BRAIN_MASK_SCHEMA,
     BRAINLES_LOGFILE_SCHEMA,
-    LONGITUDINAL_TRAFO_SCHEMA,
+    LONGITUDINAL_DISP_SCHEMA,
     LONGITUDINAL_WARP_SCHEMA,
     MODALITY_STRIPPED_SCHEMA,
     RECURRENCE_SCHEMA,
@@ -211,6 +218,7 @@ def register_recurrence(
     outdir: Path,
     fixed_mask_file: Path = None,
     moving_mask_file: Path = None,
+    registration_algorithm: str = "dirac",
 ) -> None:
     """
     Register a postop image with recurrence to preop.
@@ -222,6 +230,8 @@ def register_recurrence(
         outdir (Path): Directory where the output files will be saved.
         fixed_mask_file (Path): Path to a mask in fixed space used for registration.
         moving_mask_file (Path): Path to a mask in moving space used for registration.
+        registration_algorithm (str): Longitudinal registration approach. Supported
+            values are "dirac" (default, 3-step pipeline) and "syn" (legacy ANTs SyN).
 
     Returns:
         None
@@ -229,46 +239,130 @@ def register_recurrence(
     start_time = time.time()
     logger.info("Starting longitudinal co-registration.")
 
-    t1c_pre_img = ants.image_read(str(t1c_pre_file))
-    t1c_post_img = ants.image_read(str(t1c_post_file))
-
-    # Masks
-    reg_kwargs = {}
-    if fixed_mask_file is not None:
-        reg_kwargs["mask"] = ants.image_read(str(fixed_mask_file))
-        logger.info(f"Running with provided mask (fixed space) {str(fixed_mask_file)}.")
-    if moving_mask_file is not None:
-        reg_kwargs["moving_mask"] = ants.image_read(str(moving_mask_file))
-        logger.info(
-            f"Running with provided mask (moving space) {str(moving_mask_file)}."
+    algorithm = registration_algorithm.lower()
+    if algorithm not in {"dirac", "syn"}:
+        raise ValueError(
+            f"Unsupported registration_algorithm '{registration_algorithm}'. "
+            "Expected one of: 'dirac', 'syn'."
         )
 
-    # SyN Registration
-    reg = ants.registration(
-        fixed=t1c_pre_img,
-        moving=t1c_post_img,
-        type_of_transform="antsRegistrationSyN[s,2]",
+    if algorithm == "syn":
+        t1c_pre_img = ants.image_read(str(t1c_pre_file))
+        t1c_post_img = ants.image_read(str(t1c_post_file))
+
+        reg_kwargs = {}
+        if fixed_mask_file is not None:
+            reg_kwargs["mask"] = ants.image_read(str(fixed_mask_file))
+            logger.info(
+                f"Running with provided mask (fixed space) {str(fixed_mask_file)}."
+            )
+        if moving_mask_file is not None:
+            reg_kwargs["moving_mask"] = ants.image_read(str(moving_mask_file))
+            logger.info(
+                f"Running with provided mask (moving space) {str(moving_mask_file)}."
+            )
+
+        reg = ants.registration(
+            fixed=t1c_pre_img,
+            moving=t1c_post_img,
+            type_of_transform="antsRegistrationSyN[s,2]",
+            **reg_kwargs,
+        )
+
+        recurrence_outfile = RECURRENCE_SCHEMA.format(base_dir=outdir)
+        recurrence_outfile.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(
+            src=reg["fwdtransforms"][0],
+            dst=str(LONGITUDINAL_DISP_SCHEMA.format(base_dir=outdir)),
+        )
+        ants.image_write(
+            reg["warpedmovout"],
+            str(LONGITUDINAL_WARP_SCHEMA.format(base_dir=outdir)),
+        )
+
+        recurrence_seg = ants.image_read(str(recurrence_seg_file))
+        recurrence_warped = ants.apply_transforms(
+            fixed=t1c_pre_img.clone("unsigned int"),
+            moving=recurrence_seg,
+            transformlist=reg["fwdtransforms"],
+            interpolator="nearestNeighbor",
+        )
+        ants.image_write(recurrence_warped, str(recurrence_outfile))
+
+        time_spent = time.time() - start_time
+        logger.info(
+            f"Finished longitudinal co-registration in {time_spent:.2f} seconds. Output saved to {str(recurrence_outfile)}."
+        )
+        return
+
+    if fixed_mask_file is not None:
+        logger.warning(
+            f"fixed_mask_file ({fixed_mask_file}) is currently ignored for DIRAC-based recurrence registration."
+        )
+    if moving_mask_file is not None:
+        logger.warning(
+            f"moving_mask_file ({moving_mask_file}) is currently ignored for DIRAC-based recurrence registration."
+        )
+
+    recurrence_outfile = RECURRENCE_SCHEMA.format(base_dir=outdir)
+    recurrence_outfile.parent.mkdir(parents=True, exist_ok=True)
+
+    # Step 1: DIRAC inference (BRATS_infer_DIRAC.py)
+    run_dirac_inference(
+        t1c_pre_file=t1c_pre_file,
+        t1c_post_file=t1c_post_file,
+        workdir=recurrence_outfile.parent,
+    )
+    initial_fwd_disp = resolve_dirac_disp_field(
+        workdir=recurrence_outfile.parent,
+        suffix="followup_to_preop_disp_voxel",
+    )
+    initial_bwd_disp = resolve_dirac_disp_field(
+        workdir=recurrence_outfile.parent,
+        suffix="preop_to_followup_disp_voxel",
     )
 
-    recurrence_outdir = RECURRENCE_SCHEMA.format(base_dir=outdir)
-    recurrence_outdir.parent.mkdir(parents=True, exist_ok=True)
+    # Step 2: Instance optimization (BRATS_instance_optimization.py)
+    preop_mask = resolve_dirac_disp_field(
+        workdir=recurrence_outfile.parent,
+        suffix="yx_seg",
+    )
+    followup_mask = resolve_dirac_disp_field(
+        workdir=recurrence_outfile.parent,
+        suffix="xy_seg",
+    )
+
+    optimized_fwd_disp = (
+        recurrence_outfile.parent / "followup_to_preop_disp_voxel_optimized.nii.gz"
+    )
+    optimize_warp_field(
+        t1c_pre_file=t1c_pre_file,
+        t1c_post_file=t1c_post_file,
+        followup_to_preop_disp=initial_fwd_disp,
+        preop_to_followup_disp=initial_bwd_disp,
+        optimized_followup_to_preop_disp=optimized_fwd_disp,
+        preop_mask_file=preop_mask,
+        followup_mask_file=followup_mask,
+        device=torch.device("cpu" if not torch.cuda.is_available() else "cuda"),
+    )
+
+    # Step 3: Apply transformations (BRATS_apply_longitudinal_warp.py)
+    apply_longitudinal_warp(
+        t1c_pre_file=t1c_pre_file,
+        t1c_post_file=t1c_post_file,
+        recurrence_seg_file=recurrence_seg_file,
+        optimized_followup_to_preop_disp=optimized_fwd_disp,
+        warped_post_out=LONGITUDINAL_WARP_SCHEMA.format(base_dir=outdir),
+        recurrence_out=recurrence_outfile,
+    )
+
+    # Preserve transformation artifact in conventional output location.
     shutil.copyfile(
-        src=reg["fwdtransforms"][0],
-        dst=str(LONGITUDINAL_TRAFO_SCHEMA.format(base_dir=outdir)),
-    )
-    ants.image_write(
-        reg["warpedmovout"], str(LONGITUDINAL_WARP_SCHEMA.format(base_dir=outdir))
+        src=str(optimized_fwd_disp),
+        dst=str(LONGITUDINAL_DISP_SCHEMA.format(base_dir=outdir)),
     )
 
-    recurrence_seg = ants.image_read(str(recurrence_seg_file))
-    recurrence_warped = ants.apply_transforms(
-        fixed=t1c_pre_img.clone("unsigned int"),
-        moving=recurrence_seg,
-        transformlist=reg["fwdtransforms"],
-        interpolator="nearestNeighbor",
-    )
-    ants.image_write(recurrence_warped, str(recurrence_outdir))
     time_spent = time.time() - start_time
     logger.info(
-        f"Finished longitudinal co-registration in {time_spent:.2f} seconds. Output saved to {str(recurrence_outdir)}."
+        f"Finished longitudinal co-registration in {time_spent:.2f} seconds. Output saved to {str(recurrence_outfile)}."
     )

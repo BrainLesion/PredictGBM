@@ -117,6 +117,8 @@ class DicomProcessor(BaseProcessor):
         outdir (Path): Path to the output directory.
         dcm2niix_location (Path): Path to the dcm2niix executable.
         cuda_device (Optional, str): The gpu device to use.
+        registration_algorithm (str): Longitudinal registration approach for
+            recurrence mapping. Supported values are "dirac" (default) and "syn".
     """
 
     def __init__(
@@ -134,6 +136,7 @@ class DicomProcessor(BaseProcessor):
         outdir: Path,
         dcm2niix_location: Path = Path("dcm2niix"),
         cuda_device: str = "0",
+        registration_algorithm: str = "dirac",
     ) -> None:
         super().__init__(patient_id, model_id, outdir, cuda_device)
         self.t1_preop_dir = t1_preop_dir
@@ -145,6 +148,7 @@ class DicomProcessor(BaseProcessor):
         self.t2_followup_dir = t2_followup_dir
         self.flair_followup_dir = flair_followup_dir
         self.dcm2niix_location = dcm2niix_location
+        self.registration_algorithm = registration_algorithm
 
     def _preprocess_preop(self) -> None:
         preprocessor = DicomPreprocessor(
@@ -176,6 +180,7 @@ class DicomProcessor(BaseProcessor):
         registrator = RegisterRecurrencePipe(
             preop_dir=self.outdir_preop,
             followup_dir=self.outdir_followup,
+            registration_algorithm=self.registration_algorithm,
         )
         registrator.run()
 
@@ -208,6 +213,8 @@ class NiftiProcessor(BaseProcessor):
         is_skull_stripped (Optional, bool): If true, skips the skull stripping step.
         is_coregistered (Optional, bool): If true, skips the co-registration to atlas space step.
             Note that BRATS algorithms were trained in SRI-24 space.
+        registration_algorithm (str): Longitudinal registration approach for
+            recurrence mapping. Supported values are "dirac" (default) and "syn".
     """
 
     def __init__(
@@ -228,6 +235,7 @@ class NiftiProcessor(BaseProcessor):
         recurrenceseg_file: Optional[Path] = None,
         is_skull_stripped: bool = False,
         is_coregistered: bool = False,
+        registration_algorithm: str = "dirac",
     ) -> None:
         super().__init__(patient_id, model_id, outdir, cuda_device)
         self.t1_preop_file = t1_preop_file
@@ -242,6 +250,7 @@ class NiftiProcessor(BaseProcessor):
         self.recurrenceseg_file = recurrenceseg_file
         self.is_skull_stripped = is_skull_stripped
         self.is_coregistered = is_coregistered
+        self.registration_algorithm = registration_algorithm
         # TODO: This class can handle missing modalities IF the segmentations are provided.
         #      Currently, empty modalities can be handled as empty Path("") inputs.
         #      Implement this more explicitely and check if segmentations are provided properly.
@@ -282,5 +291,6 @@ class NiftiProcessor(BaseProcessor):
             preop_dir=self.outdir_preop,
             followup_dir=self.outdir_followup,
             is_coregistered=self.is_coregistered,
+            registration_algorithm=self.registration_algorithm,
         )
         registrator.run()

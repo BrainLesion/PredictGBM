@@ -17,7 +17,6 @@ from predict_gbm.preprocessing.tissue_segmentation import (
     generate_registration_mask,
     run_tissue_seg_registration,
 )
-from predict_gbm.utils.utils import make_symlink
 from predict_gbm.utils.constants import (
     LONGITUDINAL_WARP_SCHEMA,
     MODALITY_CONVERTED_SCHEMA,
@@ -299,12 +298,11 @@ class NiftiPreprocessor(BasePreprocessor):
                 )
         else:
             for modality, path in modality_dict.items():
-                make_symlink(
-                    src=path,
-                    dst=MODALITY_CONVERTED_SCHEMA.format(
-                        base_dir=self.outdir, modality=modality
-                    ),
+                dst = MODALITY_CONVERTED_SCHEMA.format(
+                    base_dir=self.outdir, modality=modality
                 )
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(path, dst)
 
         if self.tumorseg_file is not None:
             logger.warning(
@@ -327,11 +325,13 @@ class RegisterRecurrencePipe(BasePipe):
         is_coregistered: bool = False,
         use_fixed_mask: bool = False,
         use_moving_mask: bool = False,
+        registration_algorithm: str = "dirac",
     ) -> None:
         super().__init__(preop_dir=preop_dir, followup_dir=followup_dir)
         self.is_coregistered = is_coregistered
         self.use_fixed_mask = use_fixed_mask
         self.use_moving_mask = use_moving_mask
+        self.registration_algorithm = registration_algorithm
 
     def run(self) -> None:  # pragma: no cover - wrapper tested via pipeline
         start_time = time.time()
@@ -356,20 +356,20 @@ class RegisterRecurrencePipe(BasePipe):
             )
 
         if self.is_coregistered:
-            make_symlink(
-                src=t1c_post_file,
-                dst=LONGITUDINAL_WARP_SCHEMA.format(base_dir=self.followup_dir),
-            )
-            make_symlink(
-                src=recurrence_seg_file,
-                dst=RECURRENCE_SCHEMA.format(base_dir=self.followup_dir),
-            )
+            t1c_post_dst = LONGITUDINAL_WARP_SCHEMA.format(base_dir=self.followup_dir)
+            t1c_post_dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(t1c_post_file, t1c_post_dst)
+
+            recurrence_dst = RECURRENCE_SCHEMA.format(base_dir=self.followup_dir)
+            recurrence_dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(recurrence_seg_file, recurrence_dst)
         else:
             register_recurrence(
                 t1c_pre_file=t1c_pre_file,
                 t1c_post_file=t1c_post_file,
                 recurrence_seg_file=recurrence_seg_file,
                 outdir=self.followup_dir,
+                registration_algorithm=self.registration_algorithm,
                 **reg_kwargs,
             )
 

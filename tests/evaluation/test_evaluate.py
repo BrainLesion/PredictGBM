@@ -10,7 +10,7 @@ import numpy as np
 from tests.helpers import generate_mock_nifti
 from predict_gbm.evaluation.evaluate import (
     create_standard_plan,
-    find_threshold,
+    topk_plan,
     generate_distance_fade_mask,
     generate_distance_fade_mask_no_plateau,
     evaluate_tumor_model,
@@ -34,12 +34,18 @@ class TestEvaluateUtils(unittest.TestCase):
         with self.assertRaises(ValueError):
             create_standard_plan(core, 0)
 
-    def test_find_threshold(self):
-        volume = np.array([0.1, 0.4, 0.6, 0.8])
-        thr = find_threshold(volume, target_volume=2)
-        self.assertEqual(np.sum(volume > thr), 2)
-        small = np.array([0.0, 0.0])
-        self.assertEqual(find_threshold(small, target_volume=5), 0)
+    def test_topk_plan(self):
+        scores = np.array([0.1, 0.7, 0.4, 0.9], dtype=np.float32)
+        plan = topk_plan(scores, target_voxels=2)
+        self.assertEqual(int(plan.sum()), 2)
+        self.assertEqual(int(plan[3]), 1)
+        self.assertEqual(int(plan[1]), 1)
+
+        mask = np.array([0, 1, 1, 0], dtype=np.int32)
+        plan_masked = topk_plan(scores, target_voxels=1, mask=mask)
+        self.assertEqual(int(plan_masked.sum()), 1)
+        self.assertEqual(int(plan_masked[1]), 1)
+        self.assertEqual(int(plan_masked[0]), 0)
 
     def test_generate_distance_fade_mask(self):
         mask = np.zeros((3, 3, 3), dtype=np.int32)

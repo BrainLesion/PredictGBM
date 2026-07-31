@@ -1,10 +1,10 @@
 import tempfile
 import unittest
 import warnings
+import json
 from pathlib import Path
 from predict_gbm.utils.parsing import PatientDataset
-from predict_gbm.utils.constants import RHUH_GBM_DIR, PREDICT_GBM_DIR
-
+from predict_gbm.utils.constants import RHUH_GBM_DIR
 
 # Silence third-party warnings that clutter test output
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -15,12 +15,30 @@ class TestPatientDataset(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.temp_savefile = Path(self.temp_dir.name) / "dataset.json"
+        self.temp_derivatives_dataset = (
+            Path(self.temp_dir.name) / "dataset_with_derivatives.json"
+        )
 
         self.exam_dataset_dir = RHUH_GBM_DIR
-        self.derivatives_dataset_dir = PREDICT_GBM_DIR
+        self.derivatives_dataset_dir = self._create_derivatives_dataset()
 
     def tearDown(self):
         self.temp_dir.cleanup()
+
+    def _create_derivatives_dataset(self):
+        with self.exam_dataset_dir.open("r") as f:
+            data = json.load(f)
+
+        for patient in data["patients"]:
+            patient["derivatives"] = {
+                "tumor_seg": str(Path(patient["patient_dir"]) / "tumor_seg.nii.gz"),
+                "brain_mask": str(Path(patient["patient_dir"]) / "brain_mask.nii.gz"),
+            }
+
+        with self.temp_derivatives_dataset.open("w") as f:
+            json.dump(data, f, indent=2)
+
+        return self.temp_derivatives_dataset
 
     def test_loading_saving_exam_dataset(self):
         dataset = PatientDataset()

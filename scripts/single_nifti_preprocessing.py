@@ -2,7 +2,6 @@ import argparse
 from pathlib import Path
 from predict_gbm.preprocessing import NiftiPreprocessor
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-cuda_device", type=str, default="0", help="GPU id to run on.")

@@ -8,7 +8,6 @@ from wandb.apis import InternalApi
 from docker.errors import DockerException
 from typing import Dict, List
 
-
 try:
     client = docker.from_env()
 except DockerException as e:
