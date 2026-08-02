@@ -9,12 +9,14 @@ from predict_gbm.preprocessing.norm_ss_coregistration import (
     normalize,
     initialize_center_modality,
     initialize_moving_modalities,
+    norm_ss_coregister,
     register_recurrence,
 )
 from brainles_preprocessing.modality import Modality, CenterModality
 from brainles_preprocessing.normalization.percentile_normalizer import (
     PercentileNormalizer,
 )
+from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtractor
 
 # Silence third-party warnings that clutter test output
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -93,6 +95,19 @@ class TestNormSsCoregistration(unittest.TestCase):
         )
         self.assertEqual(len(mods), 3)
         self.assertTrue(all([isinstance(m, Modality) for m in mods]))
+
+    @patch("predict_gbm.preprocessing.norm_ss_coregistration.AtlasCentricPreprocessor")
+    def test_norm_ss_coregister_uses_synthstrip(self, preprocessor_cls_mock):
+        t1 = self._save_mock_nifti("t1.nii.gz")
+        t1c = self._save_mock_nifti("t1c.nii.gz")
+        t2 = self._save_mock_nifti("t2.nii.gz")
+        fl = self._save_mock_nifti("flair.nii.gz")
+
+        norm_ss_coregister(t1, t1c, t2, fl, self.outdir)
+
+        preprocessor_cls_mock.assert_called_once()
+        brain_extractor = preprocessor_cls_mock.call_args.kwargs["brain_extractor"]
+        self.assertIsInstance(brain_extractor, SynthStripExtractor)
 
     @patch("predict_gbm.preprocessing.norm_ss_coregistration.apply_longitudinal_warp")
     @patch("predict_gbm.preprocessing.norm_ss_coregistration.optimize_warp_field")

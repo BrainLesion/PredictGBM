@@ -16,7 +16,7 @@ if __name__ == "__main__":
         t1c_file=patient_root_dir / "RHUH-0001_0_t1ce.nii.gz",
         t2_file=patient_root_dir / "RHUH-0001_0_t2.nii.gz",
         flair_file=patient_root_dir / "RHUH-0001_0_flair.nii.gz",
-        pre_treatment=True,
+        perform_tissueseg=True,
         outdir=patient_root_dir,
         cuda_device=args.cuda_device,
         is_skull_stripped=True,

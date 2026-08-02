@@ -9,6 +9,7 @@ from brainles_preprocessing.normalization import Normalizer
 from brainles_preprocessing.preprocessor import AtlasCentricPreprocessor
 from brainles_preprocessing.registration import ANTsRegistrator
 from brainles_preprocessing.modality import Modality, CenterModality
+from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtractor
 from brainles_preprocessing.normalization.percentile_normalizer import (
     PercentileNormalizer,
 )
@@ -65,7 +66,7 @@ def initialize_center_modality(
         modality_name (str): A descriptive name for the modality (e.g., 't1c').
         normalizer (Normalizer): An instance of the Normalizer class that defines the normalization parameters.
         outdir (Path): The directory where the output files (normalized image and mask) will be saved. Usually the exam dir.
-        skull_strip (bool): If true, performs skull stripping via HDBet
+        skull_strip (bool): If true, performs skull stripping via SynthStrip
 
     Returns:
         CenterModality: An instance of CenterModality configured with the input file, normalization settings
@@ -110,7 +111,7 @@ def initialize_moving_modalities(
         modality_name (List[Path]): List of descriptive names for the modalities.
         normalizer (Normalizer): An instance of the Normalizer class that defines the normalization parameters.
         outdir (Path): The directory where the output files will be saved. Usually the exam dir.
-        skull_strip (bool): If true, performs skull stripping via HDBet
+        skull_strip (bool): If true, performs skull stripping via SynthStrip
 
     Returns:
         List[Modality]: A list of Modality instances configured for the moving modalities.
@@ -159,7 +160,7 @@ def norm_ss_coregister(
         t2_file (Path): Path to the t2 nifti.
         flair_file (Path): Path to the flair nifti.
         outdir (Path): Base directory where the output will be saved. Usually exam dir.
-        skull_strip (bool): If true, performs skull stripping via HDBet
+        skull_strip (bool): If true, performs skull stripping via SynthStrip
 
     Returns:
         None
@@ -199,6 +200,7 @@ def norm_ss_coregister(
         center_modality=center,
         moving_modalities=moving,
         registrator=registrator,
+        brain_extractor=SynthStripExtractor(),
     )
 
     preprocessor.run(

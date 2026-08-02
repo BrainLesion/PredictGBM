@@ -37,8 +37,6 @@ class BasePreprocessor:
     Parameters:
         outdir (Path): Output directory containing either nifti converted data or skull stripped niftis in the
             expected directory structure.
-        pre_treatment (bool): Whether the provided DICOM are preop (True) or postop (False).
-            Causes the BRATS segmentation algorithm to choose different models.
         mask_tissueseg (bool): If true, masks out the tumor region for the tissue segmentation step.
         perform_coregistration (bool): If true, performs normalization, skull stripping, co-registration
         perform_skull_stripping (bool): If true, performs skull stripping during co-registration step.
@@ -50,7 +48,6 @@ class BasePreprocessor:
     def __init__(
         self,
         outdir: Path,
-        pre_treatment: bool,
         mask_tissueseg: bool = False,
         perform_coregistration: bool = True,
         perform_skull_stripping: bool = True,
@@ -59,7 +56,6 @@ class BasePreprocessor:
         cuda_device: str = "0",
     ) -> None:
         self.outdir = outdir
-        self.pre_treatment = pre_treatment
         self.mask_tissueseg = mask_tissueseg
         self.perform_coregistration = perform_coregistration
         self.perform_skull_stripping = perform_skull_stripping
@@ -106,7 +102,6 @@ class BasePreprocessor:
                     base_dir=self.outdir, modality="flair"
                 ),
                 outdir=self.outdir,
-                pre_treatment=self.pre_treatment,
                 cuda_device=self.cuda_device,
             )
         elif self.perform_coregistration:
@@ -159,8 +154,7 @@ class DicomPreprocessor(BasePreprocessor):
          t1c_dir (Path): Path to the directory with the DICOM files for T1c.
          t2_dir (Path): Path to the directory with the DICOM files for T2.
          flair_dir (Path): Path to the directory with the DICOM files for Flair.
-         pre_treatment (bool): Whether the provided DICOM are preop (True) or postop (False).
-             Causes the BRATS segmentation algorithm to choose different models.
+         perform_tissueseg (bool): If true, performs tissue segmentation.
          outdir (Path): Base directory for the output. Usually exam directory.
          dcm2niix_location (Path, optional): The location of the dcm2niix executable.
          cuda_device (str): GPU device to use.
@@ -172,19 +166,18 @@ class DicomPreprocessor(BasePreprocessor):
         t1c_dir: Path,
         t2_dir: Path,
         flair_dir: Path,
-        pre_treatment: bool,
+        perform_tissueseg: bool,
         outdir: Path,
         dcm2niix_location: Path = Path("dcm2niix"),
         cuda_device: str = "0",
     ) -> None:
         super().__init__(
             outdir=outdir,
-            pre_treatment=pre_treatment,
             cuda_device=cuda_device,
             perform_coregistration=True,
             perform_skull_stripping=True,
             perform_tumorseg=True,
-            perform_tissueseg=pre_treatment,
+            perform_tissueseg=perform_tissueseg,
         )
         self.t1_dir = t1_dir
         self.t1c_dir = t1c_dir
@@ -235,8 +228,7 @@ class NiftiPreprocessor(BasePreprocessor):
         t1c_file (Path): Path to the NIfTI file with the t1c data.
         t2_file (Path): Path to the NIfTI file with the t2 data.
         flair_file (Path): Path to the NIfTI file with the flair data.
-        pre_treatment (bool): Whether the provided DICOM are preop (True) or postop (False).
-            Causes the BRATS segmentation algorithm to choose different models.
+        perform_tissueseg (bool): If true, performs tissue segmentation.
         outdir (Path): Base directory for the output. Usually exam directory.
         cuda_device (str): GPU device to use.
         is_coregistered (bool): True if the provided data has already been co-registered to SRI-24 space and skull stripped.
@@ -250,7 +242,7 @@ class NiftiPreprocessor(BasePreprocessor):
         t1c_file: Path,
         t2_file: Path,
         flair_file: Path,
-        pre_treatment: bool,
+        perform_tissueseg: bool,
         outdir: Path,
         is_coregistered: bool,
         is_skull_stripped: bool,
@@ -259,12 +251,11 @@ class NiftiPreprocessor(BasePreprocessor):
     ) -> None:
         super().__init__(
             outdir=outdir,
-            pre_treatment=pre_treatment,
             cuda_device=cuda_device,
             perform_coregistration=not is_coregistered,
             perform_skull_stripping=not is_skull_stripped,
             perform_tumorseg=tumorseg_file is None,
-            perform_tissueseg=pre_treatment,
+            perform_tissueseg=perform_tissueseg,
         )
         self.t1_file = t1_file
         self.t1c_file = t1c_file

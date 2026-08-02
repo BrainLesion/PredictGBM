@@ -14,10 +14,7 @@ from predict_gbm.utils.constants import (
     TUMORSEG_SCHEMA,
     TUMOR_SEGMENTATION_FOLDER,
 )
-from brats.constants import (
-    AdultGliomaPreTreatmentAlgorithms,
-    AdultGliomaPostTreatmentAlgorithms,
-)
+from brats.constants import AdultGliomaPreAndPostTreatmentAlgorithms
 
 # Silence third-party warnings that clutter test output
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -73,9 +70,9 @@ class TestTumorSegmentation(unittest.TestCase):
 
     @patch("predict_gbm.preprocessing.tumor_segmentation.split_segmentation")
     @patch(
-        "predict_gbm.preprocessing.tumor_segmentation.AdultGliomaPreTreatmentSegmenter"
+        "predict_gbm.preprocessing.tumor_segmentation.AdultGliomaPreAndPostTreatmentSegmenter"
     )
-    def test_run_brats_pre_treatment(self, mock_seg_cls, mock_split):
+    def test_run_brats(self, mock_seg_cls, mock_split):
         mock_segmenter = MagicMock()
         mock_seg_cls.return_value = mock_segmenter
 
@@ -85,44 +82,11 @@ class TestTumorSegmentation(unittest.TestCase):
             self.t2_file,
             self.flair_file,
             self.base_dir,
-            pre_treatment=True,
-        )
-
-        mock_seg_cls.assert_called_once_with(
-            algorithm=AdultGliomaPreTreatmentAlgorithms.BraTS23_1,
-            cuda_devices="0",
-        )
-
-        seg_outfile = str(TUMORSEG_SCHEMA.format(base_dir=self.base_dir))
-        mock_segmenter.infer_single.assert_called_once_with(
-            t1n=str(self.t1_file),
-            t1c=str(self.t1c_file),
-            t2w=str(self.t2_file),
-            t2f=str(self.flair_file),
-            output_file=seg_outfile,
-        )
-        mock_split.assert_called_once_with(seg_outfile, self.base_dir)
-
-    @patch("predict_gbm.preprocessing.tumor_segmentation.split_segmentation")
-    @patch(
-        "predict_gbm.preprocessing.tumor_segmentation.AdultGliomaPostTreatmentSegmenter"
-    )
-    def test_run_brats_post_treatment(self, mock_seg_cls, mock_split):
-        mock_segmenter = MagicMock()
-        mock_seg_cls.return_value = mock_segmenter
-
-        ts.run_brats(
-            self.t1_file,
-            self.t1c_file,
-            self.t2_file,
-            self.flair_file,
-            self.base_dir,
-            pre_treatment=False,
             cuda_device="1",
         )
 
         mock_seg_cls.assert_called_once_with(
-            algorithm=AdultGliomaPostTreatmentAlgorithms.BraTS24_1,
+            algorithm=AdultGliomaPreAndPostTreatmentAlgorithms.BraTS25_1,
             cuda_devices="1",
         )
 

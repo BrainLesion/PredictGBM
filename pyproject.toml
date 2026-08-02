@@ -27,8 +27,8 @@ exclude = ["scripts", "test", "docs", ".github"]
 
 [tool.poetry.dependencies]
 python = ">=3.10,<4.0"
-brats = "^0.0.28"
-brainles-preprocessing = "^0.6.2"
+brats = "^0.1.8"
+brainles-preprocessing = {version = "^0.6.10", extras = ["synthstrip"]}
 wandb = "^0.21.1"
 pydicom = "^3.0.1"
 typing-extensions = "^4.14.1"

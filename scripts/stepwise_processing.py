@@ -56,7 +56,7 @@ if __name__ == "__main__":
         t2_dir=t2_preop_dir,
         flair_dir=flair_preop_dir,
         outdir=outdir_preop,
-        pre_treatment=True,
+        perform_tissueseg=True,
         cuda_device=args.cuda_device,
     )
     preprocessor.run()
@@ -98,7 +98,6 @@ if __name__ == "__main__":
         t2_file=skull_strip_followup_outdir / "t2_bet_normalized.nii.gz",
         flair_file=skull_strip_followup_outdir / "flair_bet_normalized.nii.gz",
         outdir=outdir_followup,
-        pre_treatment=False,
         cuda_device=args.cuda_device,
     )
 

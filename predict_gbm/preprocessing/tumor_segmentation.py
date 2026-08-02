@@ -3,11 +3,8 @@ import numpy as np
 import nibabel as nib
 from pathlib import Path
 from loguru import logger
-from brats import AdultGliomaPreTreatmentSegmenter, AdultGliomaPostTreatmentSegmenter
-from brats.constants import (
-    AdultGliomaPreTreatmentAlgorithms,
-    AdultGliomaPostTreatmentAlgorithms,
-)
+from brats import AdultGliomaPreAndPostTreatmentSegmenter
+from brats.constants import AdultGliomaPreAndPostTreatmentAlgorithms
 from predict_gbm.utils.constants import (
     TUMORSEG_EDEMA_SCHEMA,
     TUMORSEG_SCHEMA,
@@ -67,7 +64,6 @@ def run_brats(
     t2_file: Path,
     flair_file: Path,
     outdir: Path,
-    pre_treatment: bool = True,
     cuda_device: str = "0",
 ) -> None:
     """
@@ -79,8 +75,6 @@ def run_brats(
         t2_file (Path): Path to the T2 file.
         flair_file (Path): Path to the flair file.
         outdir (Path): Directory to save the output to. Usually exam directory.
-        pre_treatment (bool): True if the provided MRI are preop, False if they are postop.
-            Causes BRATS to use the proper model based on this flag.
         cuda_device (str): The GPU device to run on.
 
     Returns:
@@ -88,16 +82,10 @@ def run_brats(
     """
     start_time = time.time()
     logger.info("Starting tumor segmentation via BRATS.")
-    if pre_treatment:
-        segmenter = AdultGliomaPreTreatmentSegmenter(
-            algorithm=AdultGliomaPreTreatmentAlgorithms.BraTS23_1,
-            cuda_devices=cuda_device,
-        )
-    else:
-        segmenter = AdultGliomaPostTreatmentSegmenter(
-            algorithm=AdultGliomaPostTreatmentAlgorithms.BraTS24_1,
-            cuda_devices=cuda_device,
-        )
+    segmenter = AdultGliomaPreAndPostTreatmentSegmenter(
+        algorithm=AdultGliomaPreAndPostTreatmentAlgorithms.BraTS25_1,
+        cuda_devices=cuda_device,
+    )
 
     seg_outfile = str(TUMORSEG_SCHEMA.format(base_dir=outdir))
     segmenter.infer_single(

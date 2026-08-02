@@ -158,7 +158,7 @@ class DicomProcessor(BaseProcessor):
             flair_dir=self.flair_preop_dir,
             outdir=self.outdir_preop,
             dcm2niix_location=self.dcm2niix_location,
-            pre_treatment=True,
+            perform_tissueseg=True,
             cuda_device=self.cuda_device,
         )
         preprocessor.run()
@@ -171,7 +171,7 @@ class DicomProcessor(BaseProcessor):
             flair_dir=self.flair_followup_dir,
             outdir=self.outdir_followup,
             dcm2niix_location=self.dcm2niix_location,
-            pre_treatment=False,
+            perform_tissueseg=False,
             cuda_device=self.cuda_device,
         )
         preprocessor.run()
@@ -263,7 +263,7 @@ class NiftiProcessor(BaseProcessor):
             t2_file=self.t2_preop_file,
             flair_file=self.flair_preop_file,
             outdir=self.outdir_preop,
-            pre_treatment=True,
+            perform_tissueseg=True,
             cuda_device=self.cuda_device,
             is_coregistered=self.is_coregistered,
             is_skull_stripped=self.is_skull_stripped,
@@ -278,7 +278,7 @@ class NiftiProcessor(BaseProcessor):
             t2_file=self.t2_followup_file,
             flair_file=self.flair_followup_file,
             outdir=self.outdir_followup,
-            pre_treatment=False,
+            perform_tissueseg=False,
             cuda_device=self.cuda_device,
             is_coregistered=self.is_coregistered,
             is_skull_stripped=self.is_skull_stripped,
