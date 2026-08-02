@@ -17,7 +17,11 @@ from brainles_preprocessing.normalization.percentile_normalizer import (
     PercentileNormalizer,
 )
 from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtractor
-from predict_gbm.utils.constants import LONGITUDINAL_WARP_SCHEMA
+from predict_gbm.utils.constants import (
+    LONGITUDINAL_WARP_SCHEMA,
+    REGISTRATION_ATLAS_MNI152_DIR,
+    REGISTRATION_ATLAS_SRI24_DIR,
+)
 
 # Silence third-party warnings that clutter test output
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -170,6 +174,39 @@ class TestNormSsCoregistration(unittest.TestCase):
         # additional_quantitative_modalities are not normalized
         self.assertIsNotNone(by_name["adc"].raw_bet_output_path)
         self.assertIsNone(by_name["adc"].normalized_bet_output_path)
+
+    @patch("predict_gbm.preprocessing.norm_ss_coregistration.AtlasCentricPreprocessor")
+    def test_norm_ss_coregister_defaults_to_mni152_atlas(self, preprocessor_cls_mock):
+        t1 = self._save_mock_nifti("t1.nii.gz")
+        t1c = self._save_mock_nifti("t1c.nii.gz")
+        t2 = self._save_mock_nifti("t2.nii.gz")
+        fl = self._save_mock_nifti("flair.nii.gz")
+
+        norm_ss_coregister(t1, t1c, t2, fl, self.outdir)
+
+        atlas_image_path = preprocessor_cls_mock.call_args.kwargs["atlas_image_path"]
+        self.assertEqual(atlas_image_path, REGISTRATION_ATLAS_MNI152_DIR)
+
+    @patch("predict_gbm.preprocessing.norm_ss_coregistration.AtlasCentricPreprocessor")
+    def test_norm_ss_coregister_can_switch_to_sri24_atlas(self, preprocessor_cls_mock):
+        t1 = self._save_mock_nifti("t1.nii.gz")
+        t1c = self._save_mock_nifti("t1c.nii.gz")
+        t2 = self._save_mock_nifti("t2.nii.gz")
+        fl = self._save_mock_nifti("flair.nii.gz")
+
+        norm_ss_coregister(t1, t1c, t2, fl, self.outdir, atlas="sri24")
+
+        atlas_image_path = preprocessor_cls_mock.call_args.kwargs["atlas_image_path"]
+        self.assertEqual(atlas_image_path, REGISTRATION_ATLAS_SRI24_DIR)
+
+    def test_norm_ss_coregister_rejects_unsupported_atlas(self):
+        t1 = self._save_mock_nifti("t1.nii.gz")
+        t1c = self._save_mock_nifti("t1c.nii.gz")
+        t2 = self._save_mock_nifti("t2.nii.gz")
+        fl = self._save_mock_nifti("flair.nii.gz")
+
+        with self.assertRaises(ValueError):
+            norm_ss_coregister(t1, t1c, t2, fl, self.outdir, atlas="unknown")
 
     def test_norm_ss_coregister_rejects_reserved_name_in_additional_modalities(self):
         t1 = self._save_mock_nifti("t1.nii.gz")

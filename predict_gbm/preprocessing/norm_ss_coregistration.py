@@ -27,9 +27,16 @@ from predict_gbm.utils.constants import (
     LONGITUDINAL_WARP_SCHEMA,
     MODALITY_STRIPPED_SCHEMA,
     RECURRENCE_SCHEMA,
+    REGISTRATION_ATLAS_MNI152_DIR,
+    REGISTRATION_ATLAS_SRI24_DIR,
     REGISTRATION_TRAFO_SCHEMA,
 )
 from predict_gbm.utils.utils import validate_additional_modality_names
+
+REGISTRATION_ATLASES = {
+    "mni152": REGISTRATION_ATLAS_MNI152_DIR,
+    "sri24": REGISTRATION_ATLAS_SRI24_DIR,
+}
 
 
 def normalize(img_file: Path, outfile: Path) -> None:
@@ -170,6 +177,7 @@ def norm_ss_coregister(
     skull_strip: bool = True,
     additional_modalities: Optional[Dict[str, Path]] = None,
     additional_quantitative_modalities: Optional[Dict[str, Path]] = None,
+    atlas: str = "mni152",
 ) -> None:
     """
     Performs normalization, skull stripping and co-registration based on the brainles preprocessing module.
@@ -187,6 +195,7 @@ def norm_ss_coregister(
             additional_modalities, but processed without intensity normalization (e.g. for
             quantitative maps like ADC). Names must not collide with each other, with
             additional_modalities, or with the reserved modality names (t1, t1c, t2, flair).
+        atlas (str): Atlas to register the patient into. One of "mni152" (default) or "sri24".
 
     Returns:
         None
@@ -202,6 +211,11 @@ def norm_ss_coregister(
     validate_additional_modality_names(
         additional_modalities, additional_quantitative_modalities
     )
+
+    if atlas not in REGISTRATION_ATLASES:
+        raise ValueError(
+            f"Unsupported atlas '{atlas}'. Expected one of: {sorted(REGISTRATION_ATLASES)}."
+        )
 
     Path(outdir).mkdir(parents=True, exist_ok=True)
     percentile_normalizer = PercentileNormalizer(
@@ -237,13 +251,13 @@ def norm_ss_coregister(
             normalize=False,
         )
 
-    # brainles-preprocessing also uses sri24, to set atlas here use atlas_image_path
     registrator = ANTsRegistrator(transformation_params={"defaultvalue": 0})
     preprocessor = AtlasCentricPreprocessor(
         center_modality=center,
         moving_modalities=moving,
         registrator=registrator,
         brain_extractor=SynthStripExtractor(),
+        atlas_image_path=REGISTRATION_ATLASES[atlas],
     )
 
     preprocessor.run(

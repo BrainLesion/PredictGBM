@@ -63,10 +63,17 @@ DATA_DIR = PROJECT_DIR / "data"
 
 
 # ATLAS
-ATLAS_DIR = DATA_DIR / "mni152_atlas"
-ATLAS_T1_DIR = ATLAS_DIR / "mni_icbm152_t1_stripped.nii.gz"
-ATLAS_TISSUES_DIR = ATLAS_DIR / "mni_icbm152_tissues.nii.gz"
-ATLAS_TISSUE_PBMAPS_DIR = PathSchema(ATLAS_DIR / "mni_icbm152_{tissue}_pbmap.nii.gz")
+ATLAS_DIR = DATA_DIR / "atlas"
+MNI152_ATLAS_DIR = ATLAS_DIR / "mni152"
+SRI24_ATLAS_DIR = ATLAS_DIR / "sri24"
+
+ATLAS_T1_DIR = MNI152_ATLAS_DIR / "mni_icbm152_t1_stripped.nii.gz"
+ATLAS_TISSUES_DIR = MNI152_ATLAS_DIR / "mni_icbm152_tissues.nii.gz"
+ATLAS_TISSUE_PBMAPS_DIR = PathSchema(MNI152_ATLAS_DIR / "mni_icbm152_{tissue}_pbmap.nii.gz")
+
+# REGISTRATION ATLAS (used for co-registration in norm_ss_coregister)
+REGISTRATION_ATLAS_MNI152_DIR = MNI152_ATLAS_DIR / "brats_MNI152lin_T1_1mm.nii.gz"
+REGISTRATION_ATLAS_SRI24_DIR = SRI24_ATLAS_DIR / "t1_stripped.nii.gz"
 
 
 # DATASETS
