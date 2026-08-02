@@ -4,7 +4,7 @@ import shutil
 import torch
 from pathlib import Path
 from loguru import logger
-from typing import List
+from typing import Dict, List, Optional
 from brainles_preprocessing.normalization import Normalizer
 from brainles_preprocessing.preprocessor import AtlasCentricPreprocessor
 from brainles_preprocessing.registration import ANTsRegistrator
@@ -18,6 +18,7 @@ from predict_gbm.preprocessing.longitudinal_dirac import (
     resolve_dirac_disp_field,
     optimize_warp_field,
     run_dirac_inference,
+    warp_image_to_preop,
 )
 from predict_gbm.utils.constants import (
     BRAIN_MASK_SCHEMA,
@@ -28,6 +29,7 @@ from predict_gbm.utils.constants import (
     RECURRENCE_SCHEMA,
     REGISTRATION_TRAFO_SCHEMA,
 )
+from predict_gbm.utils.utils import validate_additional_modality_names
 
 
 def normalize(img_file: Path, outfile: Path) -> None:
@@ -99,9 +101,10 @@ def initialize_center_modality(
 def initialize_moving_modalities(
     modality_files: List[Path],
     modality_names: List[Path],
-    normalizer: Normalizer,
     outdir: Path,
+    normalizer: Optional[Normalizer] = None,
     skull_strip: bool = True,
+    normalize: bool = True,
 ) -> Modality:
     """
     Initializes and returns a list of Modality objects with moving modalities for registration.
@@ -109,9 +112,11 @@ def initialize_moving_modalities(
     Parameters:
         modality_file (List[Path]): List of paths to the moving modality nifti used for registration.
         modality_name (List[Path]): List of descriptive names for the modalities.
-        normalizer (Normalizer): An instance of the Normalizer class that defines the normalization parameters.
         outdir (Path): The directory where the output files will be saved. Usually the exam dir.
+        normalizer (Optional[Normalizer]): An instance of the Normalizer class that defines the
+            normalization parameters. Required when normalize=True, ignored otherwise.
         skull_strip (bool): If true, performs skull stripping via SynthStrip
+        normalize (bool): If true, applies the normalizer and writes the normalized output.
 
     Returns:
         List[Modality]: A list of Modality instances configured for the moving modalities.
@@ -123,20 +128,33 @@ def initialize_moving_modalities(
             base_dir=outdir, modality=mod_name
         )
 
-        if skull_strip:
+        if skull_strip and normalize:
             m = Modality(
                 input_path=mod_file,
                 modality_name=mod_name,
                 normalizer=normalizer,
                 normalized_bet_output_path=stripped_modality_outfile,
             )
-        else:
+        elif skull_strip and not normalize:
+            m = Modality(
+                input_path=mod_file,
+                modality_name=mod_name,
+                raw_bet_output_path=stripped_modality_outfile,
+            )
+        elif not skull_strip and normalize:
             logger.info(f"normalized_skull_output_path: {stripped_modality_outfile}")
             m = Modality(
                 input_path=mod_file,
                 modality_name=mod_name,
                 normalizer=normalizer,
                 normalized_skull_output_path=stripped_modality_outfile,
+            )
+        else:
+            logger.info(f"raw_skull_output_path: {stripped_modality_outfile}")
+            m = Modality(
+                input_path=mod_file,
+                modality_name=mod_name,
+                raw_skull_output_path=stripped_modality_outfile,
             )
 
         moving_modalities.append(m)
@@ -150,6 +168,8 @@ def norm_ss_coregister(
     flair_file: Path,
     outdir: Path,
     skull_strip: bool = True,
+    additional_modalities: Optional[Dict[str, Path]] = None,
+    additional_quantitative_modalities: Optional[Dict[str, Path]] = None,
 ) -> None:
     """
     Performs normalization, skull stripping and co-registration based on the brainles preprocessing module.
@@ -161,6 +181,12 @@ def norm_ss_coregister(
         flair_file (Path): Path to the flair nifti.
         outdir (Path): Base directory where the output will be saved. Usually exam dir.
         skull_strip (bool): If true, performs skull stripping via SynthStrip
+        additional_modalities (Optional[Dict[str, Path]]): Mapping of additional modality
+            name to nifti path, processed alongside t1/t2/flair with intensity normalization.
+        additional_quantitative_modalities (Optional[Dict[str, Path]]): Same as
+            additional_modalities, but processed without intensity normalization (e.g. for
+            quantitative maps like ADC). Names must not collide with each other, with
+            additional_modalities, or with the reserved modality names (t1, t1c, t2, flair).
 
     Returns:
         None
@@ -170,6 +196,12 @@ def norm_ss_coregister(
         "Starting normalization, skull strippping, co-registration step. Starting brainles preprocessing."
     )
     logger.info(f"skull_strip: {skull_strip}")
+
+    additional_modalities = additional_modalities or {}
+    additional_quantitative_modalities = additional_quantitative_modalities or {}
+    validate_additional_modality_names(
+        additional_modalities, additional_quantitative_modalities
+    )
 
     Path(outdir).mkdir(parents=True, exist_ok=True)
     percentile_normalizer = PercentileNormalizer(
@@ -187,12 +219,23 @@ def norm_ss_coregister(
         skull_strip=skull_strip,
     )
     moving = initialize_moving_modalities(
-        modality_files=[str(t1_file), str(t2_file), str(flair_file)],
-        modality_names=["t1", "t2", "flair"],
+        modality_files=[str(t1_file), str(t2_file), str(flair_file)]
+        + [str(p) for p in additional_modalities.values()],
+        modality_names=["t1", "t2", "flair"] + list(additional_modalities.keys()),
         normalizer=percentile_normalizer,
         outdir=str(outdir),
         skull_strip=skull_strip,
     )
+    if additional_quantitative_modalities:
+        moving += initialize_moving_modalities(
+            modality_files=[
+                str(p) for p in additional_quantitative_modalities.values()
+            ],
+            modality_names=list(additional_quantitative_modalities.keys()),
+            outdir=str(outdir),
+            skull_strip=skull_strip,
+            normalize=False,
+        )
 
     # brainles-preprocessing also uses sri24, to set atlas here use atlas_image_path
     registrator = ANTsRegistrator(transformation_params={"defaultvalue": 0})
@@ -221,6 +264,7 @@ def register_recurrence(
     fixed_mask_file: Path = None,
     moving_mask_file: Path = None,
     registration_algorithm: str = "dirac",
+    additional_modalities: Optional[Dict[str, Path]] = None,
 ) -> None:
     """
     Register a postop image with recurrence to preop.
@@ -234,12 +278,21 @@ def register_recurrence(
         moving_mask_file (Path): Path to a mask in moving space used for registration.
         registration_algorithm (str): Longitudinal registration approach. Supported
             values are "dirac" (default, 3-step pipeline) and "syn" (legacy ANTs SyN).
+        additional_modalities (Optional[Dict[str, Path]]): Mapping of modality name to its
+            post-operative (followup-space) file. Each is warped into preop space alongside
+            t1c_post_file. Must not contain the key "t1c".
 
     Returns:
         None
     """
     start_time = time.time()
     logger.info("Starting longitudinal co-registration.")
+
+    additional_modalities = additional_modalities or {}
+    if "t1c" in additional_modalities:
+        raise ValueError(
+            "additional_modalities must not contain 't1c'; use t1c_pre_file/t1c_post_file instead."
+        )
 
     algorithm = registration_algorithm.lower()
     if algorithm not in {"dirac", "syn"}:
@@ -279,7 +332,7 @@ def register_recurrence(
         )
         ants.image_write(
             reg["warpedmovout"],
-            str(LONGITUDINAL_WARP_SCHEMA.format(base_dir=outdir)),
+            str(LONGITUDINAL_WARP_SCHEMA.format(base_dir=outdir, modality="t1c")),
         )
 
         recurrence_seg = ants.image_read(str(recurrence_seg_file))
@@ -290,6 +343,21 @@ def register_recurrence(
             interpolator="nearestNeighbor",
         )
         ants.image_write(recurrence_warped, str(recurrence_outfile))
+
+        for modality_name, modality_post_file in additional_modalities.items():
+            modality_warped = ants.apply_transforms(
+                fixed=t1c_pre_img,
+                moving=ants.image_read(str(modality_post_file)),
+                transformlist=reg["fwdtransforms"],
+            )
+            ants.image_write(
+                modality_warped,
+                str(
+                    LONGITUDINAL_WARP_SCHEMA.format(
+                        base_dir=outdir, modality=modality_name
+                    )
+                ),
+            )
 
         time_spent = time.time() - start_time
         logger.info(
@@ -354,9 +422,22 @@ def register_recurrence(
         t1c_post_file=t1c_post_file,
         recurrence_seg_file=recurrence_seg_file,
         optimized_followup_to_preop_disp=optimized_fwd_disp,
-        warped_post_out=LONGITUDINAL_WARP_SCHEMA.format(base_dir=outdir),
+        warped_post_out=LONGITUDINAL_WARP_SCHEMA.format(base_dir=outdir, modality="t1c"),
         recurrence_out=recurrence_outfile,
     )
+
+    dirac_device = torch.device("cpu" if not torch.cuda.is_available() else "cuda")
+    for modality_name, modality_post_file in additional_modalities.items():
+        warp_image_to_preop(
+            image_file=modality_post_file,
+            reference_file=t1c_pre_file,
+            disp_field_file=optimized_fwd_disp,
+            out_file=LONGITUDINAL_WARP_SCHEMA.format(
+                base_dir=outdir, modality=modality_name
+            ),
+            device=dirac_device,
+            mode="bilinear",
+        )
 
     # Preserve transformation artifact in conventional output location.
     shutil.copyfile(

@@ -30,5 +30,11 @@ if __name__ == "__main__":
         flair_followup_dir=root_dir_followup / "3.000000-Ax T2 FLAIR-90513",
         outdir=patient_root_dir,
         cuda_device=args.cuda_device,
+        # Optional: name -> DICOM dir, normalized like t1/t2/flair
+        additional_modality_preop_dirs=None,
+        additional_modality_followup_dirs=None,
+        # Optional: name -> DICOM dir, not intensity-normalized (e.g. ADC)
+        additional_quantitative_modality_preop_dirs=None,
+        additional_quantitative_modality_followup_dirs=None,
     )
     processor.run()

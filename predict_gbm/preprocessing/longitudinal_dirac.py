@@ -422,6 +422,21 @@ def optimize_warp_field(
     save_nifti(fb_voxel, t1c_pre_file, optimized_followup_to_preop_disp)
 
 
+def warp_image_to_preop(
+    image_file: Path,
+    reference_file: Path,
+    disp_field_file: Path,
+    out_file: Path,
+    device: torch.device,
+    mode: str = "bilinear",
+) -> None:
+    """Warp a followup-space image into preop space using a DIRAC voxel displacement field."""
+    image = load_image_for_grid_sample(image_file, device)
+    disp = load_dirac_voxel_disp_for_grid_sample(disp_field_file, device)
+    warped = warp(image, disp, mode=mode)
+    save_nifti(warped[0, 0].permute(1, 2, 0).cpu().numpy(), reference_file, out_file)
+
+
 def apply_longitudinal_warp(
     t1c_pre_file: Path,
     t1c_post_file: Path,
@@ -431,18 +446,19 @@ def apply_longitudinal_warp(
     recurrence_out: Path,
 ):
     device = torch.device("cpu" if not torch.cuda.is_available() else "cuda")
-    followup = load_image_for_grid_sample(t1c_post_file, device)
-    tumor_seg = load_image_for_grid_sample(recurrence_seg_file, device)
-    disp_fb_opt = load_dirac_voxel_disp_for_grid_sample(
-        optimized_followup_to_preop_disp, device
+    warp_image_to_preop(
+        image_file=t1c_post_file,
+        reference_file=t1c_pre_file,
+        disp_field_file=optimized_followup_to_preop_disp,
+        out_file=warped_post_out,
+        device=device,
+        mode="bilinear",
     )
-    followup_warped = warp(followup, disp_fb_opt, mode="bilinear")
-    tumor_warped = warp(tumor_seg, disp_fb_opt, mode="nearest")
-    save_nifti(
-        followup_warped[0, 0].permute(1, 2, 0).cpu().numpy(),
-        t1c_pre_file,
-        warped_post_out,
-    )
-    save_nifti(
-        tumor_warped[0, 0].permute(1, 2, 0).cpu().numpy(), t1c_pre_file, recurrence_out
+    warp_image_to_preop(
+        image_file=recurrence_seg_file,
+        reference_file=t1c_pre_file,
+        disp_field_file=optimized_followup_to_preop_disp,
+        out_file=recurrence_out,
+        device=device,
+        mode="nearest",
     )

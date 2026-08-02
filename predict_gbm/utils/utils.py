@@ -8,8 +8,9 @@ from loguru import logger
 from pypdf import PdfWriter
 from contextlib import contextmanager
 from scipy.ndimage import center_of_mass
-from typing import List, Tuple, Optional, Union
+from typing import Iterable, List, Tuple, Optional, Union
 from brats.utils.data_handling import remove_tmp_folder
+from predict_gbm.utils.constants import RESERVED_MODALITY_NAMES
 
 
 def compute_center_of_mass(
@@ -76,6 +77,43 @@ def merge_pdfs(pdf_list: List[Union[str, Path]], output_pdf: Union[str, Path]) -
         pdf_writer.write(f)
 
     logger.info(f"Combined PDF saved as {str(output_pdf)}")
+
+
+def validate_additional_modality_names(
+    additional_modality_names: Iterable[str],
+    additional_quantitative_modality_names: Iterable[str],
+) -> None:
+    """
+    Ensures additional modality names don't collide with the reserved modality
+    names (t1, t1c, t2, flair) or with each other.
+
+    Parameters:
+        additional_modality_names (Iterable[str]): Names processed with intensity normalization.
+        additional_quantitative_modality_names (Iterable[str]): Names processed without
+            intensity normalization.
+
+    Raises:
+        ValueError: If any name collides with a reserved modality name, or if the two
+            iterables share a name.
+    """
+    additional_modality_names = set(additional_modality_names)
+    additional_quantitative_modality_names = set(additional_quantitative_modality_names)
+
+    collisions = (
+        additional_modality_names | additional_quantitative_modality_names
+    ) & RESERVED_MODALITY_NAMES
+    if collisions:
+        raise ValueError(
+            f"additional modality names {sorted(collisions)} collide with reserved "
+            f"modality names {sorted(RESERVED_MODALITY_NAMES)}."
+        )
+
+    overlap = additional_modality_names & additional_quantitative_modality_names
+    if overlap:
+        raise ValueError(
+            f"additional_modality_names and additional_quantitative_modality_names "
+            f"share names {sorted(overlap)}."
+        )
 
 
 def is_binary_array(arr: np.ndarray) -> bool:

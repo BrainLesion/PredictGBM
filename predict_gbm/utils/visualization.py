@@ -304,7 +304,7 @@ def plot_recurrence_multislice(
     n_layers = 2  # one layer for each imshow config
 
     t1c_pre_dir = MODALITY_STRIPPED_SCHEMA.format(base_dir=preop_dir, modality="t1c")
-    t1c_post_dir = LONGITUDINAL_WARP_SCHEMA.format(base_dir=followup_dir)
+    t1c_post_dir = LONGITUDINAL_WARP_SCHEMA.format(base_dir=followup_dir, modality="t1c")
     tumor_seg_dir = TUMORSEG_SCHEMA.format(base_dir=preop_dir)
     recurrence_seg_dir = RECURRENCE_SCHEMA.format(base_dir=followup_dir)
 

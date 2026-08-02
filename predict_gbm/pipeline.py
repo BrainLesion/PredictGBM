@@ -2,11 +2,12 @@ import os
 import time
 from pathlib import Path
 from loguru import logger
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from predict_gbm.prediction.predict import PredictTumorGrowthPipe
 from predict_gbm.evaluation.evaluate import EvaluateTumorModelPipe
 from predict_gbm.utils.visualization import VisualizationPipe
 from predict_gbm.utils.constants import (
+    MODALITY_STRIPPED_SCHEMA,
     PATIENT_PREOP_OUTPUT_SCHEMA,
     PATIENT_FOLLOWUP_OUTPUT_SCHEMA,
 )
@@ -97,6 +98,25 @@ class BaseProcessor:
     def _register_recurrence(self) -> None:  # pragma: no cover - interface
         raise NotImplementedError
 
+    def _longitudinal_modality_paths(
+        self,
+        additional_modality_names: List[str],
+        additional_quantitative_modality_names: List[str],
+    ) -> Dict[str, Path]:
+        """Followup-space file paths for every standard + additional modality, keyed by name.
+        Used to warp all modalities (not just t1c) during longitudinal registration."""
+        names = (
+            ["t1", "t2", "flair"]
+            + list(additional_modality_names)
+            + list(additional_quantitative_modality_names)
+        )
+        return {
+            name: MODALITY_STRIPPED_SCHEMA.format(
+                base_dir=self.outdir_followup, modality=name
+            )
+            for name in names
+        }
+
 
 class DicomProcessor(BaseProcessor):
     """
@@ -115,10 +135,22 @@ class DicomProcessor(BaseProcessor):
         t2_followup_dir (Path): Path to the directory containing the follow-up T2 DICOM images.
         flair_followup_dir (Path): Path to the directory containing the follow-up FLAIR DICOM images.
         outdir (Path): Path to the output directory.
+        additional_modality_preop_dirs (Dict[str, Path], optional): Mapping of additional
+            modality name to its pre-operative DICOM directory, processed with intensity
+            normalization.
+        additional_modality_followup_dirs (Dict[str, Path], optional): Mapping of additional
+            modality name to its follow-up DICOM directory, processed with intensity
+            normalization.
+        additional_quantitative_modality_preop_dirs (Dict[str, Path], optional): Same as
+            additional_modality_preop_dirs, but not intensity-normalized (e.g. ADC).
+        additional_quantitative_modality_followup_dirs (Dict[str, Path], optional): Same as
+            additional_modality_followup_dirs, but not intensity-normalized (e.g. ADC).
         dcm2niix_location (Path): Path to the dcm2niix executable.
         cuda_device (Optional, str): The gpu device to use.
         registration_algorithm (str): Longitudinal registration approach for
             recurrence mapping. Supported values are "dirac" (default) and "syn".
+        longitudinal_transform_all (bool): If true, warps all modalities (not just t1c) into
+            preop space during longitudinal registration.
     """
 
     def __init__(
@@ -134,9 +166,14 @@ class DicomProcessor(BaseProcessor):
         t2_followup_dir: Path,
         flair_followup_dir: Path,
         outdir: Path,
+        additional_modality_preop_dirs: Optional[Dict[str, Path]] = None,
+        additional_modality_followup_dirs: Optional[Dict[str, Path]] = None,
+        additional_quantitative_modality_preop_dirs: Optional[Dict[str, Path]] = None,
+        additional_quantitative_modality_followup_dirs: Optional[Dict[str, Path]] = None,
         dcm2niix_location: Path = Path("dcm2niix"),
         cuda_device: str = "0",
         registration_algorithm: str = "dirac",
+        longitudinal_transform_all: bool = False,
     ) -> None:
         super().__init__(patient_id, model_id, outdir, cuda_device)
         self.t1_preop_dir = t1_preop_dir
@@ -147,8 +184,17 @@ class DicomProcessor(BaseProcessor):
         self.t1c_followup_dir = t1c_followup_dir
         self.t2_followup_dir = t2_followup_dir
         self.flair_followup_dir = flair_followup_dir
+        self.additional_modality_preop_dirs = additional_modality_preop_dirs or {}
+        self.additional_modality_followup_dirs = additional_modality_followup_dirs or {}
+        self.additional_quantitative_modality_preop_dirs = (
+            additional_quantitative_modality_preop_dirs or {}
+        )
+        self.additional_quantitative_modality_followup_dirs = (
+            additional_quantitative_modality_followup_dirs or {}
+        )
         self.dcm2niix_location = dcm2niix_location
         self.registration_algorithm = registration_algorithm
+        self.longitudinal_transform_all = longitudinal_transform_all
 
     def _preprocess_preop(self) -> None:
         preprocessor = DicomPreprocessor(
@@ -160,6 +206,8 @@ class DicomProcessor(BaseProcessor):
             dcm2niix_location=self.dcm2niix_location,
             perform_tissueseg=True,
             cuda_device=self.cuda_device,
+            additional_modality_dirs=self.additional_modality_preop_dirs,
+            additional_quantitative_modality_dirs=self.additional_quantitative_modality_preop_dirs,
         )
         preprocessor.run()
 
@@ -173,14 +221,29 @@ class DicomProcessor(BaseProcessor):
             dcm2niix_location=self.dcm2niix_location,
             perform_tissueseg=False,
             cuda_device=self.cuda_device,
+            additional_modality_dirs=self.additional_modality_followup_dirs,
+            additional_quantitative_modality_dirs=self.additional_quantitative_modality_followup_dirs,
         )
         preprocessor.run()
 
     def _register_recurrence(self) -> None:
+        additional_modalities = (
+            self._longitudinal_modality_paths(
+                additional_modality_names=list(
+                    self.additional_modality_followup_dirs.keys()
+                ),
+                additional_quantitative_modality_names=list(
+                    self.additional_quantitative_modality_followup_dirs.keys()
+                ),
+            )
+            if self.longitudinal_transform_all
+            else None
+        )
         registrator = RegisterRecurrencePipe(
             preop_dir=self.outdir_preop,
             followup_dir=self.outdir_followup,
             registration_algorithm=self.registration_algorithm,
+            additional_modalities=additional_modalities,
         )
         registrator.run()
 
@@ -213,8 +276,18 @@ class NiftiProcessor(BaseProcessor):
         is_skull_stripped (Optional, bool): If true, skips the skull stripping step.
         is_coregistered (Optional, bool): If true, skips the co-registration to atlas space step.
             Note that BRATS algorithms were trained in SRI-24 space.
+        additional_modalities_preop (Optional, Dict[str, Path]): Mapping of additional modality
+            name to its pre-operative NIfTI path, processed with intensity normalization.
+        additional_modalities_followup (Optional, Dict[str, Path]): Mapping of additional modality
+            name to its follow-up NIfTI path, processed with intensity normalization.
+        additional_quantitative_modalities_preop (Optional, Dict[str, Path]): Same as
+            additional_modalities_preop, but not intensity-normalized (e.g. ADC).
+        additional_quantitative_modalities_followup (Optional, Dict[str, Path]): Same as
+            additional_modalities_followup, but not intensity-normalized (e.g. ADC).
         registration_algorithm (str): Longitudinal registration approach for
             recurrence mapping. Supported values are "dirac" (default) and "syn".
+        longitudinal_transform_all (bool): If true, warps all modalities (not just t1c) into
+            preop space during longitudinal registration.
     """
 
     def __init__(
@@ -233,9 +306,14 @@ class NiftiProcessor(BaseProcessor):
         cuda_device: str = "0",
         tumorseg_file: Optional[Path] = None,
         recurrenceseg_file: Optional[Path] = None,
+        additional_modalities_preop: Optional[Dict[str, Path]] = None,
+        additional_modalities_followup: Optional[Dict[str, Path]] = None,
+        additional_quantitative_modalities_preop: Optional[Dict[str, Path]] = None,
+        additional_quantitative_modalities_followup: Optional[Dict[str, Path]] = None,
         is_skull_stripped: bool = False,
         is_coregistered: bool = False,
         registration_algorithm: str = "dirac",
+        longitudinal_transform_all: bool = False,
     ) -> None:
         super().__init__(patient_id, model_id, outdir, cuda_device)
         self.t1_preop_file = t1_preop_file
@@ -248,9 +326,18 @@ class NiftiProcessor(BaseProcessor):
         self.flair_followup_file = flair_followup_file
         self.tumorseg_file = tumorseg_file
         self.recurrenceseg_file = recurrenceseg_file
+        self.additional_modalities_preop = additional_modalities_preop or {}
+        self.additional_modalities_followup = additional_modalities_followup or {}
+        self.additional_quantitative_modalities_preop = (
+            additional_quantitative_modalities_preop or {}
+        )
+        self.additional_quantitative_modalities_followup = (
+            additional_quantitative_modalities_followup or {}
+        )
         self.is_skull_stripped = is_skull_stripped
         self.is_coregistered = is_coregistered
         self.registration_algorithm = registration_algorithm
+        self.longitudinal_transform_all = longitudinal_transform_all
         # TODO: This class can handle missing modalities IF the segmentations are provided.
         #      Currently, empty modalities can be handled as empty Path("") inputs.
         #      Implement this more explicitely and check if segmentations are provided properly.
@@ -268,6 +355,8 @@ class NiftiProcessor(BaseProcessor):
             is_coregistered=self.is_coregistered,
             is_skull_stripped=self.is_skull_stripped,
             tumorseg_file=self.tumorseg_file,
+            additional_modalities=self.additional_modalities_preop,
+            additional_quantitative_modalities=self.additional_quantitative_modalities_preop,
         )
         preprocessor.run()
 
@@ -283,14 +372,29 @@ class NiftiProcessor(BaseProcessor):
             is_coregistered=self.is_coregistered,
             is_skull_stripped=self.is_skull_stripped,
             tumorseg_file=self.recurrenceseg_file,
+            additional_modalities=self.additional_modalities_followup,
+            additional_quantitative_modalities=self.additional_quantitative_modalities_followup,
         )
         preprocessor.run()
 
     def _register_recurrence(self) -> None:
+        additional_modalities = (
+            self._longitudinal_modality_paths(
+                additional_modality_names=list(
+                    self.additional_modalities_followup.keys()
+                ),
+                additional_quantitative_modality_names=list(
+                    self.additional_quantitative_modalities_followup.keys()
+                ),
+            )
+            if self.longitudinal_transform_all
+            else None
+        )
         registrator = RegisterRecurrencePipe(
             preop_dir=self.outdir_preop,
             followup_dir=self.outdir_followup,
             is_coregistered=self.is_coregistered,
             registration_algorithm=self.registration_algorithm,
+            additional_modalities=additional_modalities,
         )
         registrator.run()

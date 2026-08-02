@@ -58,6 +58,10 @@ if __name__ == "__main__":
         outdir=outdir_preop,
         perform_tissueseg=True,
         cuda_device=args.cuda_device,
+        # Optional: name -> DICOM dir, normalized like t1/t2/flair
+        additional_modality_dirs=None,
+        # Optional: name -> DICOM dir, not intensity-normalized (e.g. ADC)
+        additional_quantitative_modality_dirs=None,
     )
     preprocessor.run()
 
@@ -88,31 +92,37 @@ if __name__ == "__main__":
         flair_file=dicom_conversion_outdir / "flair.nii.gz",
         skull_strip=True,
         outdir=outdir_followup,
+        # Optional: name -> nifti path, normalized like t1/t2/flair
+        additional_modalities=None,
+        # Optional: name -> nifti path, not intensity-normalized (e.g. ADC)
+        additional_quantitative_modalities=None,
     )
 
     # Tumor segmentation
     tumorseg_file = outdir_followup / "tumor_segmentation" / "tumor_seg.nii.gz"
     run_brats(
-        t1_file=skull_strip_followup_outdir / "t1_bet_normalized.nii.gz",
-        t1c_file=skull_strip_followup_outdir / "t1c_bet_normalized.nii.gz",
-        t2_file=skull_strip_followup_outdir / "t2_bet_normalized.nii.gz",
-        flair_file=skull_strip_followup_outdir / "flair_bet_normalized.nii.gz",
+        t1_file=skull_strip_followup_outdir / "t1_skullstripped.nii.gz",
+        t1c_file=skull_strip_followup_outdir / "t1c_skullstripped.nii.gz",
+        t2_file=skull_strip_followup_outdir / "t2_skullstripped.nii.gz",
+        flair_file=skull_strip_followup_outdir / "flair_skullstripped.nii.gz",
         outdir=outdir_followup,
         cuda_device=args.cuda_device,
     )
 
     # Tissue segmentation
     run_tissue_seg_registration(
-        t1_file=skull_strip_followup_outdir / "t1c_bet_normalized.nii.gz",
+        t1_file=skull_strip_followup_outdir / "t1c_skullstripped.nii.gz",
         outdir=outdir_followup,
     )
 
     # Longitudinal registration
     register_recurrence(
-        t1c_pre_file=outdir_preop / "skull_stripped/t1c_bet_normalized.nii.gz",
-        t1c_post_file=skull_strip_followup_outdir / "t1c_bet_normalized.nii.gz",
+        t1c_pre_file=outdir_preop / "skull_stripped/t1c_skullstripped.nii.gz",
+        t1c_post_file=skull_strip_followup_outdir / "t1c_skullstripped.nii.gz",
         recurrence_seg_file=tumorseg_file,
         outdir=outdir_followup,
+        # Optional: name -> followup-space nifti path, warped into preop space
+        additional_modalities=None,
     )
 
     # 2. PREDICTION
@@ -121,8 +131,8 @@ if __name__ == "__main__":
         gm_file=outdir_preop / "tissue_segmentation/gm_pbmap.nii.gz",
         wm_file=outdir_preop / "tissue_segmentation/wm_pbmap.nii.gz",
         csf_file=outdir_preop / "tissue_segmentation/csf_pbmap.nii.gz",
-        t1c_file=outdir_preop / "skull_stripped/t1c_bet_normalized.nii.gz",
-        flair_file=outdir_preop / "skull_stripped/flair_bet_normalized.nii.gz",
+        t1c_file=outdir_preop / "skull_stripped/t1c_skullstripped.nii.gz",
+        flair_file=outdir_preop / "skull_stripped/flair_skullstripped.nii.gz",
         brain_mask_file=outdir_preop / "skull_stripped/t1c_bet_mask.nii.gz",
         model_id=model_id,
         outdir=outdir_preop,
@@ -131,7 +141,7 @@ if __name__ == "__main__":
     # 3. EVALUATION
     pred_file = outdir_preop / f"growth_models/{model_id}/{model_id}_pred.nii.gz"
     results, standard_plan, model_plan = evaluate_tumor_model(
-        t1c_file=outdir_preop / "skull_stripped/t1c_bet_normalized.nii.gz",
+        t1c_file=outdir_preop / "skull_stripped/t1c_skullstripped.nii.gz",
         tumorseg_file=outdir_preop / "tumor_segmentation/tumor_seg.nii.gz",
         recurrence_file=outdir_followup / "longitudinal/recurrence_preop.nii.gz",
         pred_file=pred_file,

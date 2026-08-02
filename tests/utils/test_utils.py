@@ -16,6 +16,7 @@ from predict_gbm.utils.utils import (
     merge_pdfs,
     is_binary_array,
     temporary_tmpdir,
+    validate_additional_modality_names,
 )
 
 # Silence third-party warnings that clutter test output
@@ -107,6 +108,20 @@ class TestUtils(unittest.TestCase):
     def test_is_binary_array(self):
         self.assertTrue(is_binary_array(np.array([0, 1, 0, 1])))
         self.assertFalse(is_binary_array(np.array([0, 2])))
+
+    def test_validate_additional_modality_names_allows_disjoint_names(self):
+        # Should not raise.
+        validate_additional_modality_names(["swi"], ["adc"])
+
+    def test_validate_additional_modality_names_rejects_reserved_name(self):
+        with self.assertRaises(ValueError):
+            validate_additional_modality_names(["t2"], [])
+        with self.assertRaises(ValueError):
+            validate_additional_modality_names([], ["flair"])
+
+    def test_validate_additional_modality_names_rejects_overlap(self):
+        with self.assertRaises(ValueError):
+            validate_additional_modality_names(["swi"], ["swi"])
 
     def test_temporary_tmpdir(self):
         base = self.tmp_path / "base"

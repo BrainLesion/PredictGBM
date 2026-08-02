@@ -2,6 +2,10 @@ from pathlib import Path
 from typing import Any, Union
 
 
+# MODALITIES
+RESERVED_MODALITY_NAMES = {"t1", "t1c", "t2", "flair"}
+
+
 class PathSchema:
     """
     A simple helper class that wraps a format string to generate Path objects. Accepts both string and Path objects and
@@ -109,7 +113,7 @@ MODALITY_CONVERTED_SCHEMA = OUTPUT_BASE_SCHEMA / CONVERSION_FOLDER / "{modality}
 BRAIN_MASK_SCHEMA = OUTPUT_BASE_SCHEMA / SKULL_STRIP_FOLDER / "t1c_bet_mask.nii.gz"
 BRAINLES_LOGFILE_SCHEMA = OUTPUT_BASE_SCHEMA / SKULL_STRIP_FOLDER / "brainles.log"
 MODALITY_STRIPPED_SCHEMA = (
-    OUTPUT_BASE_SCHEMA / SKULL_STRIP_FOLDER / "{modality}_bet_normalized.nii.gz"
+    OUTPUT_BASE_SCHEMA / SKULL_STRIP_FOLDER / "{modality}_skullstripped.nii.gz"
 )
 REGISTRATION_TRAFO_SCHEMA = OUTPUT_BASE_SCHEMA / SKULL_STRIP_FOLDER
 
@@ -143,7 +147,7 @@ LONGITUDINAL_DISP_SCHEMA = (
     OUTPUT_BASE_SCHEMA / LONGITUDINAL_DIR / "longitudinal_trafo.nii.gz"
 )
 LONGITUDINAL_WARP_SCHEMA = (
-    OUTPUT_BASE_SCHEMA / LONGITUDINAL_DIR / "t1c_warped_longitudinal.nii.gz"
+    OUTPUT_BASE_SCHEMA / LONGITUDINAL_DIR / "{modality}_warped_longitudinal.nii.gz"
 )
 
 STANDARD_PLAN_SCHEMA = (

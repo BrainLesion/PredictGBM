@@ -34,5 +34,11 @@ if __name__ == "__main__":
         recurrenceseg_file=root_dir_followup
         / "RHUH-0001_2_segmentations.nii.gz",  # Optional,
         is_skull_stripped=True,
+        # Optional: name -> nifti path, normalized like t1/t2/flair
+        additional_modalities_preop=None,
+        additional_modalities_followup=None,
+        # Optional: name -> nifti path, not intensity-normalized (e.g. ADC)
+        additional_quantitative_modalities_preop=None,
+        additional_quantitative_modalities_followup=None,
     )
     processor.run()
