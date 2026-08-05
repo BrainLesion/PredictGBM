@@ -247,17 +247,11 @@ class DicomPreprocessor(BasePreprocessor):
         dicom_modalities.update(self.additional_modality_dirs)
         dicom_modalities.update(self.additional_quantitative_modality_dirs)
         for modality_name, dicom_dir in dicom_modalities.items():
-            # remove suffixes because dcm2niix adds them automatically
-            outfile_tmp = (
-                MODALITY_CONVERTED_SCHEMA.format(
-                    base_dir=self.outdir, modality=modality_name
-                )
-                .with_suffix("")
-                .with_suffix("")
-            )
             dicom_to_nifti(
                 input_dir=dicom_dir,
-                outfile=outfile_tmp,
+                outfile=MODALITY_CONVERTED_SCHEMA.format(
+                    base_dir=self.outdir, modality=modality_name
+                ),
                 dcm2niix_location=self.dcm2niix_location,
             )
         time_spent_conversion = time.time() - start_time_conversion
