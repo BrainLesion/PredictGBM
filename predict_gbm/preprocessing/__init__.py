@@ -1,5 +1,5 @@
 from .preprocess import DicomPreprocessor, NiftiPreprocessor
-from .dicom_to_nifti import dicom_to_nifti
+from .conversion import dicom_to_nifti
 from .tumor_segmentation import run_brats
 from .tissue_segmentation import run_tissue_seg_registration
 from .norm_ss_coregistration import norm_ss_coregister, register_recurrence

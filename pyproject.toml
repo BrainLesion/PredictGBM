@@ -34,6 +34,7 @@ pydicom = "^3.0.1"
 typing-extensions = "^4.14.1"
 pypdf = "^6.0.0"
 medpy = "^0.5.2"
+dipy = "^1.9.0"
 
 
 [tool.poetry.group.dev.dependencies]
