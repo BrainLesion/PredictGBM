@@ -202,6 +202,13 @@ def dti_to_adc(
     _, brain_mask = median_otsu(
         dwi_data, vol_idx=b0_indices, median_radius=median_radius, numpass=numpass
     )
+    if not np.any(brain_mask):
+        logger.warning(
+            f"median_otsu found no brain voxels for {infile} (median_radius="
+            f"{median_radius}, numpass={numpass}); falling back to fitting over the "
+            "full volume without a brain mask."
+        )
+        brain_mask = np.ones(dwi_data.shape[:3], dtype=bool)
 
     selected_data = np.maximum(dwi_data[..., selected_mask], _SIGNAL_EPSILON)
     gtab = gradient_table(
