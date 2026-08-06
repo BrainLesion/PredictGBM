@@ -117,7 +117,7 @@ PATIENT_FOLLOWUP_OUTPUT_SCHEMA = (
 
 MODALITY_CONVERTED_SCHEMA = OUTPUT_BASE_SCHEMA / CONVERSION_FOLDER / "{modality}.nii.gz"
 
-BRAIN_MASK_SCHEMA = OUTPUT_BASE_SCHEMA / SKULL_STRIP_FOLDER / "t1c_bet_mask.nii.gz"
+BRAIN_MASK_SCHEMA = OUTPUT_BASE_SCHEMA / SKULL_STRIP_FOLDER / "brain_mask.nii.gz"
 BRAINLES_LOGFILE_SCHEMA = OUTPUT_BASE_SCHEMA / SKULL_STRIP_FOLDER / "brainles.log"
 MODALITY_STRIPPED_SCHEMA = (
     OUTPUT_BASE_SCHEMA / SKULL_STRIP_FOLDER / "{modality}_skullstripped.nii.gz"
@@ -160,6 +160,22 @@ LONGITUDINAL_WARP_SCHEMA = (
 STANDARD_PLAN_SCHEMA = (
     OUTPUT_BASE_SCHEMA / TUMOR_SEGMENTATION_FOLDER / "standard_plan.nii.gz"
 )
+
+
+# CONFIG
+# Central record of per-step parameters, written by update_config (predict_gbm.utils.utils)
+# into a single predict_gbm_config.json per outdir. Step names below are the top-level keys.
+CONFIG_FILENAME = "predict_gbm_config.json"
+CONFIG_SCHEMA = OUTPUT_BASE_SCHEMA / CONFIG_FILENAME
+
+CONFIG_STEP_NORM_SS_COREGISTER = "norm_ss_coregister"
+CONFIG_STEP_REGISTER_RECURRENCE = "register_recurrence"
+CONFIG_STEP_TISSUE_SEG = "run_tissue_seg"
+CONFIG_STEP_TUMOR_SEG = "run_brats"
+
+# Skull stripping is currently always performed via SynthStrip in norm_ss_coregister; this
+# constant is the single source of truth for that name so config and code cannot drift apart.
+SKULL_STRIP_ALGORITHM_SYNTHSTRIP = "SynthStrip"
 
 
 # SCHEMATA - MODEL PREDICTIONS

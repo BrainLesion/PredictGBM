@@ -23,6 +23,8 @@ from predict_gbm.preprocessing.longitudinal_dirac import (
 from predict_gbm.utils.constants import (
     BRAIN_MASK_SCHEMA,
     BRAINLES_LOGFILE_SCHEMA,
+    CONFIG_STEP_NORM_SS_COREGISTER,
+    CONFIG_STEP_REGISTER_RECURRENCE,
     LONGITUDINAL_DISP_SCHEMA,
     LONGITUDINAL_WARP_SCHEMA,
     MODALITY_STRIPPED_SCHEMA,
@@ -30,8 +32,9 @@ from predict_gbm.utils.constants import (
     REGISTRATION_ATLAS_MNI152_DIR,
     REGISTRATION_ATLAS_SRI24_DIR,
     REGISTRATION_TRAFO_SCHEMA,
+    SKULL_STRIP_ALGORITHM_SYNTHSTRIP,
 )
-from predict_gbm.utils.utils import validate_additional_modality_names
+from predict_gbm.utils.utils import update_config, validate_additional_modality_names
 
 REGISTRATION_ATLASES = {
     "mni152": REGISTRATION_ATLAS_MNI152_DIR,
@@ -264,6 +267,11 @@ def norm_ss_coregister(
         log_file=BRAINLES_LOGFILE_SCHEMA.format(base_dir=outdir),
         save_dir_transformations=REGISTRATION_TRAFO_SCHEMA.format(base_dir=outdir),
     )
+    config_params = {"atlas": atlas}
+    if skull_strip:
+        config_params["skull_strip_algorithm"] = SKULL_STRIP_ALGORITHM_SYNTHSTRIP
+    update_config(outdir, CONFIG_STEP_NORM_SS_COREGISTER, config_params)
+
     time_spent = time.time() - start_time
     logger.info(
         f"Finished normalization, skull stripping, co-registration step in {time_spent:.2f} seconds. Output saved to {outdir}."
@@ -314,6 +322,12 @@ def register_recurrence(
             f"Unsupported registration_algorithm '{registration_algorithm}'. "
             "Expected one of: 'dirac', 'syn'."
         )
+
+    config_params = {
+        "registration_algorithm": algorithm,
+        "use_fixed_mask": fixed_mask_file is not None,
+        "use_moving_mask": moving_mask_file is not None,
+    }
 
     if algorithm == "syn":
         t1c_pre_img = ants.image_read(str(t1c_pre_file))
@@ -372,6 +386,8 @@ def register_recurrence(
                     )
                 ),
             )
+
+        update_config(outdir, CONFIG_STEP_REGISTER_RECURRENCE, config_params)
 
         time_spent = time.time() - start_time
         logger.info(
@@ -458,6 +474,8 @@ def register_recurrence(
         src=str(optimized_fwd_disp),
         dst=str(LONGITUDINAL_DISP_SCHEMA.format(base_dir=outdir)),
     )
+
+    update_config(outdir, CONFIG_STEP_REGISTER_RECURRENCE, config_params)
 
     time_spent = time.time() - start_time
     logger.info(

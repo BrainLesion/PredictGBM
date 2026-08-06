@@ -1,4 +1,5 @@
 import os
+import json
 import tempfile
 import unittest
 import warnings
@@ -8,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 from pypdf import PdfWriter, PdfReader
 from tests.helpers import generate_mock_nifti
+from predict_gbm.utils.constants import CONFIG_SCHEMA
 from predict_gbm.utils.utils import (
     compute_center_of_mass,
     load_mri_data,
@@ -16,6 +18,7 @@ from predict_gbm.utils.utils import (
     merge_pdfs,
     is_binary_array,
     temporary_tmpdir,
+    update_config,
     validate_additional_modality_names,
 )
 
@@ -135,6 +138,29 @@ class TestUtils(unittest.TestCase):
         self.assertEqual(os.environ.get("TMPDIR"), old_env)
         self.assertEqual(tempfile.tempdir, old_tempdir)
         self.assertFalse(tmpdir.exists())
+
+    def test_update_config_creates_file(self):
+        outdir = self.tmp_path / "does_not_exist_yet"
+        update_config(outdir, "step_a", {"foo": "bar"})
+        config_file = CONFIG_SCHEMA.format(base_dir=outdir)
+        self.assertTrue(config_file.exists())
+        with open(config_file) as f:
+            config = json.load(f)
+        self.assertEqual(config, {"step_a": {"foo": "bar"}})
+
+    def test_update_config_merges_across_steps(self):
+        update_config(self.tmp_path, "step_a", {"foo": "bar"})
+        update_config(self.tmp_path, "step_b", {"baz": 1})
+        with open(CONFIG_SCHEMA.format(base_dir=self.tmp_path)) as f:
+            config = json.load(f)
+        self.assertEqual(config, {"step_a": {"foo": "bar"}, "step_b": {"baz": 1}})
+
+    def test_update_config_overwrites_same_step(self):
+        update_config(self.tmp_path, "step_a", {"foo": "bar"})
+        update_config(self.tmp_path, "step_a", {"foo": "updated"})
+        with open(CONFIG_SCHEMA.format(base_dir=self.tmp_path)) as f:
+            config = json.load(f)
+        self.assertEqual(config, {"step_a": {"foo": "updated"}})
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 import os
 import ants
+import json
 import tempfile
 import numpy as np
 import nibabel as nib
@@ -8,9 +9,9 @@ from loguru import logger
 from pypdf import PdfWriter
 from contextlib import contextmanager
 from scipy.ndimage import center_of_mass
-from typing import Iterable, List, Tuple, Optional, Union
+from typing import Any, Dict, Iterable, List, Tuple, Optional, Union
 from brats.utils.data_handling import remove_tmp_folder
-from predict_gbm.utils.constants import RESERVED_MODALITY_NAMES
+from predict_gbm.utils.constants import CONFIG_SCHEMA, RESERVED_MODALITY_NAMES
 
 
 def compute_center_of_mass(
@@ -149,3 +150,36 @@ def temporary_tmpdir(base_dir: Union[str, Path]) -> Path:
         tempfile.tempdir = old_tempfile_dir
         remove_tmp_folder(tmpdir)
         logger.info(f"Removed temporary directory at {tmpdir}")
+
+
+def update_config(outdir: Union[str, Path], step_name: str, params: Dict[str, Any]) -> None:
+    """
+    Create or update the predict_gbm_config.json file in outdir, recording params under
+    step_name. Creates the file (and outdir) if they don't exist yet, and overwrites any
+    existing entry for step_name, leaving entries for other steps untouched.
+
+    Parameters:
+        outdir (Union[str, Path]): Directory containing (or to contain) the config file.
+        step_name (str): Name of the processing step, used as the top-level key. Should be
+            one of the CONFIG_STEP_* constants in predict_gbm.utils.constants.
+        params (Dict[str, Any]): JSON-serializable parameters to record for this step.
+
+    Returns:
+        None
+    """
+    outdir = Path(outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    config_file = CONFIG_SCHEMA.format(base_dir=outdir)
+
+    if config_file.exists():
+        with open(config_file, "r") as f:
+            config = json.load(f)
+    else:
+        config = {}
+
+    config[step_name] = params
+
+    tmp_file = config_file.with_name(config_file.name + ".tmp")
+    with open(tmp_file, "w") as f:
+        json.dump(config, f, indent=2)
+    tmp_file.replace(config_file)

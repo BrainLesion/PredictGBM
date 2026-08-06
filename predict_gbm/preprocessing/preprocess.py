@@ -15,7 +15,7 @@ from predict_gbm.preprocessing.norm_ss_coregistration import (
 )
 from predict_gbm.preprocessing.tissue_segmentation import (
     generate_registration_mask,
-    run_tissue_seg_registration,
+    run_tissue_seg,
 )
 from predict_gbm.utils.constants import (
     LONGITUDINAL_WARP_SCHEMA,
@@ -158,7 +158,7 @@ class BasePreprocessor:
             tissueseg_kwargs["registration_mask_file"] = registration_mask_file
 
         if self.perform_tissueseg:
-            run_tissue_seg_registration(
+            run_tissue_seg(
                 t1_file=MODALITY_STRIPPED_SCHEMA.format(
                     base_dir=self.outdir, modality="t1c"
                 ),

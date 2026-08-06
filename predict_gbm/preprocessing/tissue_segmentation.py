@@ -1,19 +1,26 @@
 import ants
 import time
+import shlex
+import shutil
+import subprocess
 import numpy as np
 import nibabel as nib
 from pathlib import Path
+from typing import Literal
 from loguru import logger
 from predict_gbm.utils.constants import (
     ATLAS_T1_DIR,
     ATLAS_TISSUES_DIR,
     ATLAS_TISSUE_PBMAPS_DIR,
+    BRAIN_MASK_SCHEMA,
+    CONFIG_STEP_TISSUE_SEG,
     TISSUE_LABELS,
     TISSUE_PBMAP_SCHEMA,
     TISSUE_SCHEMA,
     TISSUE_SEG_SCHEMA,
     TISSUE_SEG_BASE_SCHEMA,
 )
+from predict_gbm.utils.utils import update_config
 
 
 def generate_healthy_brain_mask(
@@ -84,7 +91,49 @@ def generate_registration_mask(tumor_seg_file: Path, outfile: Path) -> None:
     logger.info(f"Registration mask generated successfully and save to {outfile}.")
 
 
-def run_tissue_seg_registration(
+def run_tissue_seg(
+    t1_file: Path,
+    outdir: Path,
+    registration_mask_file: Path = None,
+    algorithm: Literal["atlas_registration", "antsAtroposN4"] = "atlas_registration",
+) -> None:
+    """
+    Performs tissue segmentation for gm, wm, csf using the given algorithm.
+
+    Parameters:
+        t1_file (Path): Path to the t1 nifti.
+        outdir (Path): Path to output directory. Usually exam directory.
+        registration_mask_file (Path): Path to a mask for registration metric. Voxel with value 0 are ignored.
+            Only used when algorithm is "atlas_registration".
+        algorithm (str): Tissue segmentation algorithm to use. Supports "atlas_registration", "antsAtroposN4"
+
+    Returns:
+        None
+    """
+    if algorithm == "atlas_registration":
+        run_tissue_seg_atlas_registration(
+            t1_file=t1_file,
+            outdir=outdir,
+            registration_mask_file=registration_mask_file,
+        )
+    elif algorithm == "antsAtroposN4":
+        run_tissue_seg_atropos_n4(t1_file=t1_file, outdir=outdir)
+    else:
+        raise ValueError(
+            f"Unknown algorithm {algorithm!r}. Expected 'atlas_registration' or 'antsAtroposN4'."
+        )
+
+    update_config(
+        outdir,
+        CONFIG_STEP_TISSUE_SEG,
+        {
+            "algorithm": algorithm,
+            "registration_mask_used": registration_mask_file is not None,
+        },
+    )
+
+
+def run_tissue_seg_atlas_registration(
     t1_file: Path, outdir: Path, registration_mask_file: Path = None
 ) -> None:
     """
@@ -173,6 +222,81 @@ def run_tissue_seg_registration(
         ants.image_write(
             warped_pbmap,
             str(TISSUE_PBMAP_SCHEMA.format(base_dir=outdir, tissue=tissue)),
+        )
+
+    time_spent = time.time() - start_time
+    logger.info(
+        f"Finished tissue segmentation in {time_spent:.2f} seconds. Results saved to {outdir}."
+    )
+
+
+def run_tissue_seg_atropos_n4(t1_file: Path, outdir: Path) -> None:
+    """
+    Performs tissue segmentation for gm, wm, csf by running the antsAtroposN4.sh binary with the
+    atlas tissue probability maps as spatial priors and the brain mask as constraint.
+
+    Parameters:
+        t1_file (Path): Path to the t1 nifti.
+        outdir (Path): Path to output directory. Usually exam directory.
+
+    Returns:
+        None
+    """
+    start_time = time.time()
+    logger.info("Starting tissue segmentation via antsAtroposN4.")
+
+    outprefix = TISSUE_SEG_BASE_SCHEMA.format(base_dir=outdir)
+    outprefix.mkdir(parents=True, exist_ok=True)
+
+    brain_mask_file = BRAIN_MASK_SCHEMA.format(base_dir=outdir)
+
+    # antsAtroposN4.sh expects priors as a %d-indexed filename pattern, with the index matching
+    # the label of the corresponding class in the output segmentation. Stage the atlas tissue
+    # probability maps under those names, in TISSUE_LABELS order (csf=1, gm=2, wm=3).
+    priors_dir = outprefix / "priors"
+    priors_dir.mkdir(parents=True, exist_ok=True)
+    for tissue, label in TISSUE_LABELS.items():
+        shutil.copyfile(
+            str(ATLAS_TISSUE_PBMAPS_DIR.format(tissue=tissue)),
+            str(priors_dir / f"prior{int(label)}.nii.gz"),
+        )
+
+    seg_prefix = outprefix / "tissue_seg_"
+    cmd = [
+        "antsAtroposN4.sh",
+        "-d", "3",
+        "-a", str(t1_file),
+        "-x", str(brain_mask_file),
+        "-c", "3",
+        "-p", str(priors_dir / "prior%d.nii.gz"),
+        "-w", "0.25",
+        "-y", "2",
+        "-y", "3",
+        "-o", str(seg_prefix),
+    ]
+    logger.info(f"Running: {shlex.join(cmd)}")
+    proc = subprocess.run(cmd, check=False)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"antsAtroposN4.sh exited {proc.returncode} for {t1_file}; see logs in {outprefix}"
+        )
+
+    shutil.move(
+        f"{seg_prefix}Segmentation.nii.gz", str(TISSUE_SEG_SCHEMA.format(base_dir=outdir))
+    )
+
+    seg_nifti = nib.load(str(TISSUE_SEG_SCHEMA.format(base_dir=outdir)))
+    seg_data = np.rint(seg_nifti.get_fdata()).astype(np.int32)
+    for tissue, label in TISSUE_LABELS.items():
+        shutil.move(
+            f"{seg_prefix}SegmentationPosteriors{int(label)}.nii.gz",
+            str(TISSUE_PBMAP_SCHEMA.format(base_dir=outdir, tissue=tissue)),
+        )
+
+        tissue_mask = (seg_data == int(label)).astype(np.int32)
+        nib.save(
+            nib.Nifti1Image(tissue_mask, affine=seg_nifti.affine),
+            str(TISSUE_SCHEMA.format(base_dir=outdir, tissue=tissue)),
         )
 
     time_spent = time.time() - start_time

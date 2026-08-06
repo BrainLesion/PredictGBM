@@ -7,7 +7,7 @@ def test_public_imports():
         DicomPreprocessor,
         NiftiPreprocessor,
         run_brats,
-        run_tissue_seg_registration,
+        run_tissue_seg,
         dicom_to_nifti,
         norm_ss_coregister,
         register_recurrence,
@@ -17,5 +17,5 @@ def test_public_imports():
     assert DicomProcessor and NiftiProcessor
     assert predict_tumor_growth and evaluate_tumor_model
     assert DicomPreprocessor and NiftiPreprocessor
-    assert run_brats and run_tissue_seg_registration
+    assert run_brats and run_tissue_seg
     assert dicom_to_nifti and norm_ss_coregister and register_recurrence

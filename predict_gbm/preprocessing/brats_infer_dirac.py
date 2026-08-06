@@ -157,7 +157,7 @@ def test():
         num_workers=2,
     )
 
-    print("\nValiding...")
+    print("\nValidating...")
     for batch_idx, data in enumerate(valid_generator):
         fixed_image_path = val_fixed_list[batch_idx]
         patient_dir = os.path.dirname(fixed_image_path)

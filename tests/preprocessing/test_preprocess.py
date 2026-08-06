@@ -29,7 +29,7 @@ class TestDicomPreprocessor(unittest.TestCase):
     def tearDown(self):
         self.temp_dir.cleanup()
 
-    @patch("predict_gbm.preprocessing.preprocess.run_tissue_seg_registration")
+    @patch("predict_gbm.preprocessing.preprocess.run_tissue_seg")
     @patch("predict_gbm.preprocessing.preprocess.generate_registration_mask")
     @patch("predict_gbm.preprocessing.preprocess.run_brats")
     @patch("predict_gbm.preprocessing.preprocess.norm_ss_coregister")

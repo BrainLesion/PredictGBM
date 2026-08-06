@@ -79,7 +79,82 @@ class TestTissueSegmentation(unittest.TestCase):
         self.assertEqual(mask[0, 0, 0], 0)
         self.assertEqual(mask[0, 1, 0], 1)
 
-    def test_run_tissue_seg_registration_outputs(self):
+    def test_run_tissue_seg_dispatches_to_atropos_n4(self):
+        with patch.object(
+            ts, "run_tissue_seg_atropos_n4"
+        ) as mock_atropos, patch.object(
+            ts, "run_tissue_seg_atlas_registration"
+        ) as mock_atlas:
+            ts.run_tissue_seg(
+                t1_file=self.tmp / "t1.nii.gz",
+                outdir=self.tmp / "out",
+                algorithm="antsAtroposN4",
+            )
+        mock_atropos.assert_called_once()
+        mock_atlas.assert_not_called()
+
+    def test_run_tissue_seg_rejects_unknown_algorithm(self):
+        with self.assertRaises(ValueError):
+            ts.run_tissue_seg(
+                t1_file=self.tmp / "t1.nii.gz",
+                outdir=self.tmp / "out",
+                algorithm="not_a_real_algorithm",
+            )
+
+    def test_run_tissue_seg_atropos_n4(self):
+        t1_file = self.tmp / "t1.nii.gz"
+        nib.save(nib.Nifti1Image(np.zeros((2, 2, 2)), np.eye(4)), t1_file)
+
+        outdir = self.tmp / "out"
+
+        for tissue in ["csf", "gm", "wm"]:
+            pbmap_path = self.tmp / f"{tissue}_pbmap.nii.gz"
+            nib.save(
+                nib.Nifti1Image(np.full((2, 2, 2), 0.5, dtype=np.float32), np.eye(4)),
+                pbmap_path,
+            )
+
+        brain_mask_file = self.tmp / "brain_mask.nii.gz"
+        nib.save(nib.Nifti1Image(np.ones((2, 2, 2)), np.eye(4)), brain_mask_file)
+
+        def fake_run(cmd, check=False):
+            seg_prefix = Path(cmd[cmd.index("-o") + 1])
+            seg = np.zeros((2, 2, 2), dtype=np.int32)
+            seg[0, 0, 0] = 1
+            seg[0, 0, 1] = 2
+            seg[0, 1, 0] = 3
+            nib.save(
+                nib.Nifti1Image(seg, np.eye(4)),
+                f"{seg_prefix}Segmentation.nii.gz",
+            )
+            for label in (1, 2, 3):
+                nib.save(
+                    nib.Nifti1Image(
+                        np.full((2, 2, 2), 0.1 * label, dtype=np.float32), np.eye(4)
+                    ),
+                    f"{seg_prefix}SegmentationPosteriors{label}.nii.gz",
+                )
+            return SimpleNamespace(returncode=0)
+
+        with patch.object(
+            ts, "ATLAS_TISSUE_PBMAPS_DIR", PathSchema(self.tmp / "{tissue}_pbmap.nii.gz")
+        ), patch.object(
+            ts, "BRAIN_MASK_SCHEMA", PathSchema(str(brain_mask_file))
+        ), patch.object(
+            ts.subprocess, "run", side_effect=fake_run
+        ):
+            ts.run_tissue_seg_atropos_n4(t1_file, outdir)
+
+        seg_file = TISSUE_SEG_SCHEMA.format(base_dir=outdir)
+        gm_mask = TISSUE_SCHEMA.format(base_dir=outdir, tissue="gm")
+        gm_pbmap = TISSUE_PBMAP_SCHEMA.format(base_dir=outdir, tissue="gm")
+
+        self.assertTrue(seg_file.exists())
+        self.assertTrue(gm_mask.exists())
+        self.assertTrue(gm_pbmap.exists())
+        self.assertEqual(nib.load(str(gm_mask)).get_fdata()[0, 0, 1], 1)
+
+    def test_run_tissue_seg_outputs(self):
         t1_file = self.tmp / "t1.nii.gz"
         nib.save(nib.Nifti1Image(np.zeros((2, 2, 2)), np.eye(4)), t1_file)
 
@@ -119,7 +194,7 @@ class TestTissueSegmentation(unittest.TestCase):
         ), patch.object(
             ts, "ants", mock_ants
         ):
-            ts.run_tissue_seg_registration(t1_file, outdir, mask_file)
+            ts.run_tissue_seg(t1_file, outdir, mask_file)
 
         seg_file = TISSUE_SEG_SCHEMA.format(base_dir=outdir)
         gm_mask = TISSUE_SCHEMA.format(base_dir=outdir, tissue="gm")
