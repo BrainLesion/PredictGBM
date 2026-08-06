@@ -30,7 +30,7 @@ def resolve_modalities(exam: dict, missing: list) -> dict | None:
     """
     Resolves t1/t1c/t2/flair/adc paths for an exam, applying the fallback rules:
     t1c missing -> exam excluded; t1 missing -> use t1c; t2 missing -> use flair;
-    flair missing -> use t2; adc -> prefer dti_adc over adc.
+    flair missing -> use t2; adc -> use adc_derived.
     Returns None if the exam should be excluded (t1c missing, or t2/flair unresolvable).
     """
     if "t1contrast" in missing or exam.get("t1c") is None:
@@ -50,7 +50,7 @@ def resolve_modalities(exam: dict, missing: list) -> dict | None:
     if t2_path is None or flair_path is None:
         return None
 
-    adc_path = exam.get("dti_adc") or exam.get("adc")
+    adc_path = exam.get("adc_derived")
 
     return {
         "t1": t1_path,
