@@ -6,10 +6,12 @@ from loguru import logger
 from brats import AdultGliomaPreAndPostTreatmentSegmenter
 from brats.constants import AdultGliomaPreAndPostTreatmentAlgorithms
 from predict_gbm.utils.constants import (
+    CONFIG_STEP_TUMOR_SEG,
     TUMORSEG_EDEMA_SCHEMA,
     TUMORSEG_SCHEMA,
     TUMORSEG_CORE_SCHEMA,
 )
+from predict_gbm.utils.utils import update_config
 
 
 def split_segmentation(
@@ -82,8 +84,9 @@ def run_brats(
     """
     start_time = time.time()
     logger.info("Starting tumor segmentation via BRATS.")
+    algorithm = AdultGliomaPreAndPostTreatmentAlgorithms.BraTS25_1
     segmenter = AdultGliomaPreAndPostTreatmentSegmenter(
-        algorithm=AdultGliomaPreAndPostTreatmentAlgorithms.BraTS25_1,
+        algorithm=algorithm,
         cuda_devices=cuda_device,
     )
 
@@ -97,6 +100,8 @@ def run_brats(
     )
 
     split_segmentation(seg_outfile, outdir)
+
+    update_config(outdir, CONFIG_STEP_TUMOR_SEG, {"algorithm": algorithm.value})
 
     time_spent = time.time() - start_time
     logger.info(

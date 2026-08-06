@@ -13,12 +13,14 @@ from predict_gbm.utils.constants import (
     ATLAS_TISSUES_DIR,
     ATLAS_TISSUE_PBMAPS_DIR,
     BRAIN_MASK_SCHEMA,
+    CONFIG_STEP_TISSUE_SEG,
     TISSUE_LABELS,
     TISSUE_PBMAP_SCHEMA,
     TISSUE_SCHEMA,
     TISSUE_SEG_SCHEMA,
     TISSUE_SEG_BASE_SCHEMA,
 )
+from predict_gbm.utils.utils import update_config
 
 
 def generate_healthy_brain_mask(
@@ -121,6 +123,15 @@ def run_tissue_seg(
             f"Unknown algorithm {algorithm!r}. Expected 'atlas_registration' or 'antsAtroposN4'."
         )
 
+    update_config(
+        outdir,
+        CONFIG_STEP_TISSUE_SEG,
+        {
+            "algorithm": algorithm,
+            "registration_mask_used": registration_mask_file is not None,
+        },
+    )
+
 
 def run_tissue_seg_atlas_registration(
     t1_file: Path, outdir: Path, registration_mask_file: Path = None
@@ -222,7 +233,7 @@ def run_tissue_seg_atlas_registration(
 def run_tissue_seg_atropos_n4(t1_file: Path, outdir: Path) -> None:
     """
     Performs tissue segmentation for gm, wm, csf by running the antsAtroposN4.sh binary with the
-    atlas tissue probability maps as spatial priors and the brain mask as constraint
+    atlas tissue probability maps as spatial priors and the brain mask as constraint.
 
     Parameters:
         t1_file (Path): Path to the t1 nifti.
