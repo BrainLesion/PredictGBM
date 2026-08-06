@@ -103,6 +103,8 @@ def dti_to_adc(
     bval_max: float = 1200.0,
     b0_threshold: float = 50.0,
     fit_method: Literal["WLS", "OLS"] = "WLS",
+    median_radius: int = 3,
+    numpass: int = 2,
 ) -> Path:
     """
     Fit a diffusion tensor to a raw 4D DWI series and derive an ADC (mean diffusivity) map.
@@ -110,9 +112,12 @@ def dti_to_adc(
     Only volumes with b <= bval_max are used for the fit (b0s, i.e. b <= b0_threshold, are
     always included regardless of bval_max). This is a modeling choice, not a convenience
     filter: DTI assumes monoexponential signal decay, and including higher shells makes the
-    fit absorb kurtosis curvature into D, biasing the recovered diffusivity downward. The
-    tensor is fit over the full image with dipy's TensorModel, without a brain mask, by
-    design.
+    fit absorb kurtosis curvature into D, biasing the recovered diffusivity downward.
+
+    A brain mask is estimated from the b0 volumes with dipy's median_otsu and passed to the
+    tensor fit, so voxels outside the brain (background/air, where the signal is noise and
+    the fit is unconstrained) are left at 0 rather than producing spuriously large or
+    ill-conditioned diffusivity values.
 
     MD is computed as trace(D)/3 directly from the fitted diffusion tensor (not by
     eigendecomposing and averaging eigenvalues, and without clipping individual
@@ -134,6 +139,9 @@ def dti_to_adc(
         b0_threshold (float): b-value (s/mm^2) at or below which a volume is treated as a
             b0. b0s are always included in the fit regardless of bval_max.
         fit_method (Literal["WLS", "OLS"]): Tensor fit method passed to dipy's TensorModel.
+        median_radius (int): Radius of the median filter used by median_otsu for brain
+            extraction from the b0 volumes.
+        numpass (int): Number of median filter passes used by median_otsu.
 
     Returns:
         Path: outfile.
@@ -186,12 +194,21 @@ def dti_to_adc(
         f"{int(np.count_nonzero(selected_mask))} volume(s) total."
     )
 
+    logger.info(
+        f"Computing brain mask (median_otsu, median_radius={median_radius}, "
+        f"numpass={numpass}) from {n_b0} b0 volume(s)."
+    )
+    b0_indices = np.where(b0_mask)[0].tolist()
+    _, brain_mask = median_otsu(
+        dwi_data, vol_idx=b0_indices, median_radius=median_radius, numpass=numpass
+    )
+
     selected_data = np.maximum(dwi_data[..., selected_mask], _SIGNAL_EPSILON)
     gtab = gradient_table(
         bvals[selected_mask], bvecs=bvecs[selected_mask], b0_threshold=b0_threshold
     )
     tensor_model = TensorModel(gtab, fit_method=fit_method)
-    tensor_fit = tensor_model.fit(selected_data)
+    tensor_fit = tensor_model.fit(selected_data, mask=brain_mask)
 
     # MD = trace(D)/3 from the fitted tensor directly, not from averaged eigenvalues.
     D = tensor_fit.quadratic_form
@@ -201,11 +218,12 @@ def dti_to_adc(
     finite_mask = np.isfinite(md)
     md = np.where(finite_mask, md, 0.0).astype(np.float32)
 
-    negative_fraction = float(np.count_nonzero(md < 0)) / md.size
+    brain_voxels = int(np.count_nonzero(brain_mask))
+    negative_fraction = float(np.count_nonzero((md < 0) & brain_mask)) / brain_voxels
     if negative_fraction > 0:
         logger.warning(
-            f"{negative_fraction:.4%} of voxels have negative MD (fit failure) in "
-            f"{infile}; left unclamped."
+            f"{negative_fraction:.4%} of in-brain voxels have negative MD (fit failure) "
+            f"in {infile}; left unclamped."
         )
 
     outfile.parent.mkdir(parents=True, exist_ok=True)
