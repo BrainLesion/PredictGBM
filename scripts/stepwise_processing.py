@@ -8,7 +8,7 @@ from predict_gbm.preprocessing import (
     register_recurrence,
 )
 from predict_gbm.preprocessing import DicomPreprocessor
-from predict_gbm.preprocessing import run_tissue_seg_registration
+from predict_gbm.preprocessing import run_tissue_seg
 from predict_gbm.preprocessing import run_brats
 from predict_gbm.prediction import predict_tumor_growth
 from predict_gbm.evaluation import evaluate_tumor_model
@@ -110,7 +110,7 @@ if __name__ == "__main__":
     )
 
     # Tissue segmentation
-    run_tissue_seg_registration(
+    run_tissue_seg(
         t1_file=skull_strip_followup_outdir / "t1c_skullstripped.nii.gz",
         outdir=outdir_followup,
     )
