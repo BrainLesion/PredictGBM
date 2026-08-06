@@ -9,6 +9,7 @@ from collections.abc import Iterable
 from dipy.core.gradients import gradient_table
 from dipy.io.gradients import read_bvals_bvecs
 from dipy.reconst.dti import TensorModel
+from dipy.segment.mask import median_otsu
 
 # Floor applied to the DWI signal before the log transform in tensor fitting, so that
 # noise-only (near-zero) voxels do not produce -inf/nan. Well below any real signal.
