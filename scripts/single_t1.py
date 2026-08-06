@@ -7,7 +7,7 @@ from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtract
 from brainles_preprocessing.normalization.percentile_normalizer import (
     PercentileNormalizer,
 )
-from predict_gbm.preprocessing import run_tissue_seg_registration
+from predict_gbm.preprocessing import run_tissue_seg
 from predict_gbm.preprocessing.norm_ss_coregistration import (
     REGISTRATION_ATLASES,
     initialize_center_modality,
@@ -64,9 +64,10 @@ if __name__ == "__main__":
 
     # Tissue segmentation
     t1_stripped_file = MODALITY_STRIPPED_SCHEMA.format(base_dir=outdir, modality="t1")
-    run_tissue_seg_registration(
+    run_tissue_seg(
         t1_file=t1_stripped_file,
         outdir=outdir,
+        algorithm="antsAtroposN4",
     )
 
     logger.info(f"Finished single-T1 preprocessing. Output saved to {outdir}.")
