@@ -133,7 +133,7 @@ if __name__ == "__main__":
         csf_file=outdir_preop / "tissue_segmentation/csf_pbmap.nii.gz",
         t1c_file=outdir_preop / "skull_stripped/t1c_skullstripped.nii.gz",
         flair_file=outdir_preop / "skull_stripped/flair_skullstripped.nii.gz",
-        brain_mask_file=outdir_preop / "skull_stripped/t1c_bet_mask.nii.gz",
+        brain_mask_file=outdir_preop / "skull_stripped/brain_mask.nii.gz",
         model_id=model_id,
         outdir=outdir_preop,
     )

@@ -3,6 +3,7 @@ predict_gbm/data/models/*
 !predict_gbm/data/models/test_model.tar
 test_cases/
 tmp/
+*.out
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
