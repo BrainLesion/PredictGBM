@@ -9,10 +9,13 @@ from brainles_preprocessing.normalization.percentile_normalizer import (
 )
 from predict_gbm.preprocessing import run_tissue_seg
 from predict_gbm.preprocessing.norm_ss_coregistration import (
-    REGISTRATION_ATLASES,
+    SUPPORTED_ATLASES,
     initialize_center_modality,
 )
-from predict_gbm.utils.constants import MODALITY_STRIPPED_SCHEMA
+from predict_gbm.utils.constants import (
+    ATLAS_UNSTRIPPED_SCHEMA,
+    MODALITY_STRIPPED_SCHEMA,
+)
 
 if __name__ == "__main__":
     # Example:
@@ -25,8 +28,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "-atlas",
         type=str,
-        default="mni152",
-        choices=sorted(REGISTRATION_ATLASES),
+        default="sri24",
+        choices=sorted(SUPPORTED_ATLASES),
         help="Atlas to register the t1 into.",
     )
     args = parser.parse_args()
@@ -52,13 +55,14 @@ if __name__ == "__main__":
         outdir=outdir,
         skull_strip=True,
     )
+    atlas_schema = ATLAS_UNSTRIPPED_SCHEMA
     registrator = ANTsRegistrator(transformation_params={"defaultvalue": 0})
     preprocessor = AtlasCentricPreprocessor(
         center_modality=center,
         moving_modalities=[],
         registrator=registrator,
         brain_extractor=SynthStripExtractor(),
-        atlas_image_path=REGISTRATION_ATLASES[args.atlas],
+        atlas_image_path=atlas_schema.format(atlas=args.atlas),
     )
     preprocessor.run()
 
