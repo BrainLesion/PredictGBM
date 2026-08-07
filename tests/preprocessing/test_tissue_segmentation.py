@@ -8,8 +8,6 @@ from types import SimpleNamespace
 from predict_gbm.preprocessing import tissue_segmentation as ts
 from predict_gbm.utils.constants import (
     PathSchema,
-    TISSUE_SEG_SCHEMA,
-    TISSUE_SCHEMA,
     TISSUE_PBMAP_SCHEMA,
 )
 
@@ -137,7 +135,7 @@ class TestTissueSegmentation(unittest.TestCase):
             return SimpleNamespace(returncode=0)
 
         with patch.object(
-            ts, "ATLAS_TISSUE_PBMAPS_DIR", PathSchema(self.tmp / "{tissue}_pbmap.nii.gz")
+            ts, "ATLAS_TISSUE_PBMAP_SCHEMA", PathSchema(self.tmp / "{tissue}_pbmap.nii.gz")
         ), patch.object(
             ts, "BRAIN_MASK_SCHEMA", PathSchema(str(brain_mask_file))
         ), patch.object(
@@ -145,32 +143,33 @@ class TestTissueSegmentation(unittest.TestCase):
         ):
             ts.run_tissue_seg_atropos_n4(t1_file, outdir)
 
-        seg_file = TISSUE_SEG_SCHEMA.format(base_dir=outdir)
-        gm_mask = TISSUE_SCHEMA.format(base_dir=outdir, tissue="gm")
         gm_pbmap = TISSUE_PBMAP_SCHEMA.format(base_dir=outdir, tissue="gm")
 
-        self.assertTrue(seg_file.exists())
-        self.assertTrue(gm_mask.exists())
+        # antsAtroposN4 no longer keeps the discrete segmentation or per-tissue masks
         self.assertTrue(gm_pbmap.exists())
-        self.assertEqual(nib.load(str(gm_mask)).get_fdata()[0, 0, 1], 1)
+        self.assertAlmostEqual(
+            float(nib.load(str(gm_pbmap)).get_fdata()[0, 0, 1]), 0.2, places=5
+        )
 
-    def test_run_tissue_seg_outputs(self):
+    def test_run_tissue_seg_atlas_registration_only_writes_pbmaps(self):
         t1_file = self.tmp / "t1.nii.gz"
         nib.save(nib.Nifti1Image(np.zeros((2, 2, 2)), np.eye(4)), t1_file)
 
         atlas_t1 = self.tmp / "atlas_t1.nii.gz"
         nib.save(nib.Nifti1Image(np.zeros((2, 2, 2)), np.eye(4)), atlas_t1)
 
-        tissues = np.zeros((2, 2, 2), dtype=np.int32)
-        tissues[0, 0, 0] = 1
-        tissues[0, 0, 1] = 2
-        tissues[0, 1, 0] = 3
-        atlas_tissues = self.tmp / "atlas_tissues.nii.gz"
-        nib.save(nib.Nifti1Image(tissues, np.eye(4)), atlas_tissues)
-
-        for tissue, val in {"csf": 0.1, "gm": 0.2, "wm": 0.3}.items():
+        # Vary the pbmaps per-voxel so they're non-trivial. Since mock_apply_transforms passes
+        # the moving image through unchanged, these values become the "warped" pbmaps directly.
+        pbmap_values = {
+            "csf": {(0, 0, 0): 1.0},
+            "gm": {(0, 0, 1): 1.0},
+            "wm": {(0, 1, 0): 1.0},
+        }
+        for tissue, voxels in pbmap_values.items():
+            arr = np.zeros((2, 2, 2), dtype=np.float32)
+            for voxel, value in voxels.items():
+                arr[voxel] = value
             pbmap_path = self.tmp / f"{tissue}_pbmap.nii.gz"
-            arr = np.full((2, 2, 2), val, dtype=np.float32)
             nib.save(nib.Nifti1Image(arr, np.eye(4)), pbmap_path)
 
         mask_file = self.tmp / "reg_mask.nii.gz"
@@ -185,24 +184,69 @@ class TestTissueSegmentation(unittest.TestCase):
 
         outdir = self.tmp / "out"
 
-        with patch.object(ts, "ATLAS_T1_DIR", atlas_t1), patch.object(
-            ts, "ATLAS_TISSUES_DIR", atlas_tissues
+        with patch.object(
+            ts, "ATLAS_STRIPPED_SCHEMA", PathSchema(str(atlas_t1))
         ), patch.object(
             ts,
-            "ATLAS_TISSUE_PBMAPS_DIR",
+            "ATLAS_TISSUE_PBMAP_SCHEMA",
             PathSchema(self.tmp / "{tissue}_pbmap.nii.gz"),
         ), patch.object(
             ts, "ants", mock_ants
         ):
             ts.run_tissue_seg(t1_file, outdir, mask_file)
 
-        seg_file = TISSUE_SEG_SCHEMA.format(base_dir=outdir)
-        gm_mask = TISSUE_SCHEMA.format(base_dir=outdir, tissue="gm")
         gm_pbmap = TISSUE_PBMAP_SCHEMA.format(base_dir=outdir, tissue="gm")
 
-        self.assertTrue(seg_file.exists())
-        self.assertTrue(gm_mask.exists())
         self.assertTrue(gm_pbmap.exists())
+        self.assertEqual(nib.load(str(gm_pbmap)).get_fdata()[0, 0, 1], 1.0)
+
+    def test_derive_tissue_labelmap_from_pbmaps(self):
+        pbmap_values = {
+            "csf": {(0, 0, 0): 1.0},
+            "gm": {(0, 0, 1): 1.0},
+            "wm": {(0, 1, 0): 1.0},
+        }
+        pbmap_paths = {}
+        for tissue, voxels in pbmap_values.items():
+            arr = np.zeros((2, 2, 2), dtype=np.float32)
+            for voxel, value in voxels.items():
+                arr[voxel] = value
+            pbmap_path = self.tmp / f"{tissue}_pbmap.nii.gz"
+            nib.save(nib.Nifti1Image(arr, np.eye(4)), pbmap_path)
+            pbmap_paths[tissue] = pbmap_path
+
+        labelmap_nifti = ts.derive_tissue_labelmap_from_pbmaps(
+            csf_pbmap_path=pbmap_paths["csf"],
+            gm_pbmap_path=pbmap_paths["gm"],
+            wm_pbmap_path=pbmap_paths["wm"],
+        )
+
+        labelmap = labelmap_nifti.get_fdata()
+        self.assertEqual(labelmap[0, 0, 0], 1)  # csf
+        self.assertEqual(labelmap[0, 0, 1], 2)  # gm
+        self.assertEqual(labelmap[0, 1, 0], 3)  # wm
+        self.assertEqual(labelmap[1, 1, 1], 0)  # background, all pbmaps 0
+
+    def test_derive_tissue_labelmap(self):
+        outdir = self.tmp / "exam"
+
+        pbmap_values = {
+            "csf": {(0, 0, 0): 1.0},
+            "gm": {(0, 0, 1): 1.0},
+            "wm": {(0, 1, 0): 1.0},
+        }
+        for tissue, voxels in pbmap_values.items():
+            arr = np.zeros((2, 2, 2), dtype=np.float32)
+            for voxel, value in voxels.items():
+                arr[voxel] = value
+            pbmap_path = TISSUE_PBMAP_SCHEMA.format(base_dir=outdir, tissue=tissue)
+            pbmap_path.parent.mkdir(parents=True, exist_ok=True)
+            nib.save(nib.Nifti1Image(arr, np.eye(4)), pbmap_path)
+
+        labelmap_nifti = ts.derive_tissue_labelmap(outdir)
+
+        labelmap = labelmap_nifti.get_fdata()
+        self.assertEqual(labelmap[0, 0, 1], 2)  # gm
 
 
 if __name__ == "__main__":
