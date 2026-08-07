@@ -21,8 +21,6 @@ from predict_gbm.utils.constants import (
     PREDICTION_OUTPUT_SCHEMA,
     RECURRENCE_SCHEMA,
     STANDARD_PLAN_SCHEMA,
-    TISSUE_SEG_SCHEMA,
-    TISSUE_LABELS,
     TUMORSEG_SCHEMA,
 )
 
@@ -183,9 +181,7 @@ def evaluate_tumor_model(
     pred_file: Path,
     t1c_file: Path = None,
     brain_mask_file: Path = None,
-    tissue_segmentation_file: Path = None,
     ctv_margin: int = 15,
-    csf_mask: bool = False,
 ) -> Tuple[Dict[str, Any], nib.Nifti1Image, nib.Nifti1Image]:
     """
     Evaluate a tumor model by computing recurrence coverage for standard and
@@ -197,9 +193,7 @@ def evaluate_tumor_model(
         recurrence_file (Path): Path to the recurrence segmentation NIfTI (follow-up).
         pred_file (Path): Path to model prediction NIfTI for the tumor cell concentration.
         brain_mask_file (Path, optional): Path to brain mask NIfTI. If unavailable, a mask is extracted from t1c.
-        tissue_segmentation_file (Path, optional): Path to tissue segmentation NIfTI containing csf segmentation with label 2.
         ctv_margin (int, optional): Margin used to expand the clinical target volume for the standard plan in mm. Defaults to 15.
-        csf_mask (bool, optional): If true, does not consider predictions/recurrences in CSF in any way by masking it out.
 
     Returns:
         Dict[str, Any]: Dictionary with computed metrics
@@ -216,7 +210,7 @@ def evaluate_tumor_model(
         affine = nib.load(str(t1c_file)).affine
     else:
         affine = nib.load(str(brain_mask_file)).affine
-        
+
     if brain_mask_file is None:
         t1c = load_mri_data(str(t1c_file))
         background = np.min(t1c)
@@ -224,15 +218,6 @@ def evaluate_tumor_model(
     else:
         brain_mask = load_segmentation(brain_mask_file)
     brain_mask = binary_fill_holes(brain_mask.astype(bool)).astype(np.int32)
-
-    # CSF masking
-    if csf_mask:
-        if tissue_segmentation_file is None:
-            raise ValueError(
-                "Please provide a tissue_segmentation_file when using csf_masking."
-            )
-        tissue_segmentation = load_segmentation(tissue_segmentation_file)
-        brain_mask[tissue_segmentation == TISSUE_LABELS["csf"]] = 0
 
     # Load tumor/recurrence ROIs, explicit code
     core_segmentation = load_segmentation(tumorseg_file)
@@ -304,7 +289,6 @@ class EvaluateTumorModelPipe(BasePipe):
         pred_file (Path): File path containing model prediction MRI data.
         model_id (str): Identifier for the model. Used for the name of the output file.
         ctv_margin (int, optional): Margin used to expand the clinical target volume for the standard plan in mm. Defaults to 15.
-        csf_mask (bool, optional): If true, does not consider predictions/recurrences in CSF in any way by masking it out.
     """
 
     def __init__(
@@ -313,20 +297,15 @@ class EvaluateTumorModelPipe(BasePipe):
         followup_dir: Path,
         model_id: str,
         ctv_margin: int = 15,
-        csf_mask: bool = False,
     ) -> None:
         super().__init__(preop_dir=preop_dir, followup_dir=followup_dir)
         self.model_id = model_id
         self.ctv_margin = ctv_margin
-        self.csf_mask = csf_mask
 
     def run(self) -> Dict[str, Any]:  # pragma: no cover - wrapper tested via pipeline
         brain_mask_file = BRAIN_MASK_SCHEMA.format(base_dir=str(self.preop_dir))
         t1c_file = MODALITY_STRIPPED_SCHEMA.format(
             base_dir=str(self.preop_dir), modality="t1c"
-        )
-        tissue_segmentation_file = TISSUE_SEG_SCHEMA.format(
-            base_dir=str(self.preop_dir)
         )
         tumorseg_file = TUMORSEG_SCHEMA.format(base_dir=str(self.preop_dir))
         recurrence_file = RECURRENCE_SCHEMA.format(base_dir=str(self.followup_dir))
@@ -343,9 +322,7 @@ class EvaluateTumorModelPipe(BasePipe):
             recurrence_file=recurrence_file,
             pred_file=pred_file,
             brain_mask_file=brain_mask_file,
-            tissue_segmentation_file=tissue_segmentation_file,
             ctv_margin=self.ctv_margin,
-            csf_mask=self.csf_mask,
         )
 
         # Save plans

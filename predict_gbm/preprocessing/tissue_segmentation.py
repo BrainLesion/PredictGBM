@@ -9,18 +9,17 @@ from pathlib import Path
 from typing import Literal
 from loguru import logger
 from predict_gbm.utils.constants import (
-    ATLAS_T1_DIR,
-    ATLAS_TISSUES_DIR,
-    ATLAS_TISSUE_PBMAPS_DIR,
+    ATLAS_STRIPPED_SCHEMA,
+    ATLAS_TISSUE_PBMAP_SCHEMA,
     BRAIN_MASK_SCHEMA,
     CONFIG_STEP_TISSUE_SEG,
     TISSUE_LABELS,
     TISSUE_PBMAP_SCHEMA,
-    TISSUE_SCHEMA,
-    TISSUE_SEG_SCHEMA,
     TISSUE_SEG_BASE_SCHEMA,
 )
 from predict_gbm.utils.utils import update_config
+
+SUPPORTED_ATLASES = ("brats_mni152", "mni152", "sri24")
 
 
 def generate_healthy_brain_mask(
@@ -91,11 +90,61 @@ def generate_registration_mask(tumor_seg_file: Path, outfile: Path) -> None:
     logger.info(f"Registration mask generated successfully and save to {outfile}.")
 
 
+def derive_tissue_labelmap_from_pbmaps(
+    csf_pbmap_path: Path, gm_pbmap_path: Path, wm_pbmap_path: Path
+) -> nib.Nifti1Image:
+    """
+    Derives a discrete tissue labelmap from the csf/gm/wm probability maps by taking the
+    argmax across the maps at each voxel.
+
+    Parameters:
+        csf_pbmap_path (Path): Path to the csf probability map nifti.
+        gm_pbmap_path (Path): Path to the gm probability map nifti.
+        wm_pbmap_path (Path): Path to the wm probability map nifti.
+            All maps must share the same affine and shape.
+
+    Returns:
+        nib.Nifti1Image: The derived discrete tissue labelmap.
+    """
+    pbmap_paths = {"csf": csf_pbmap_path, "gm": gm_pbmap_path, "wm": wm_pbmap_path}
+    reference_nifti = nib.load(str(csf_pbmap_path))
+    pbmap_stack = np.stack(
+        [nib.load(str(pbmap_paths[tissue])).get_fdata() for tissue in pbmap_paths],
+        axis=0,
+    )
+
+    background_mask = np.all(np.isclose(pbmap_stack, 0), axis=0)
+    labels = np.array([TISSUE_LABELS[tissue] for tissue in pbmap_paths])
+    labelmap = labels[np.argmax(pbmap_stack, axis=0)]
+    labelmap[background_mask] = 0
+
+    return nib.Nifti1Image(labelmap.astype(np.int32), affine=reference_nifti.affine)
+
+
+def derive_tissue_labelmap(outdir: Path) -> nib.Nifti1Image:
+    """
+    Derives the discrete tissue labelmap for an exam directory from its previously
+    generated csf/gm/wm probability maps.
+
+    Parameters:
+        outdir (Path): Path to exam directory containing tissue probability maps under standard layout.
+
+    Returns:
+        nib.Nifti1Image: The derived discrete tissue labelmap.
+    """
+    return derive_tissue_labelmap_from_pbmaps(
+        csf_pbmap_path=TISSUE_PBMAP_SCHEMA.format(base_dir=outdir, tissue="csf"),
+        gm_pbmap_path=TISSUE_PBMAP_SCHEMA.format(base_dir=outdir, tissue="gm"),
+        wm_pbmap_path=TISSUE_PBMAP_SCHEMA.format(base_dir=outdir, tissue="wm"),
+    )
+
+
 def run_tissue_seg(
     t1_file: Path,
     outdir: Path,
     registration_mask_file: Path = None,
     algorithm: Literal["atlas_registration", "antsAtroposN4"] = "atlas_registration",
+    atlas: str = "brats_mni152",
 ) -> None:
     """
     Performs tissue segmentation for gm, wm, csf using the given algorithm.
@@ -106,18 +155,26 @@ def run_tissue_seg(
         registration_mask_file (Path): Path to a mask for registration metric. Voxel with value 0 are ignored.
             Only used when algorithm is "atlas_registration".
         algorithm (str): Tissue segmentation algorithm to use. Supports "atlas_registration", "antsAtroposN4"
+        atlas (str): Atlas whose skull-stripped T1 template and tissue probability maps are used.
+            One of "brats_mni152" (default), "mni152", or "sri24".
 
     Returns:
         None
     """
+    if atlas not in SUPPORTED_ATLASES:
+        raise ValueError(
+            f"Unsupported atlas '{atlas}'. Expected one of: {sorted(SUPPORTED_ATLASES)}."
+        )
+
     if algorithm == "atlas_registration":
         run_tissue_seg_atlas_registration(
             t1_file=t1_file,
             outdir=outdir,
             registration_mask_file=registration_mask_file,
+            atlas=atlas,
         )
     elif algorithm == "antsAtroposN4":
-        run_tissue_seg_atropos_n4(t1_file=t1_file, outdir=outdir)
+        run_tissue_seg_atropos_n4(t1_file=t1_file, outdir=outdir, atlas=atlas)
     else:
         raise ValueError(
             f"Unknown algorithm {algorithm!r}. Expected 'atlas_registration' or 'antsAtroposN4'."
@@ -128,22 +185,28 @@ def run_tissue_seg(
         CONFIG_STEP_TISSUE_SEG,
         {
             "algorithm": algorithm,
+            "atlas": atlas,
             "registration_mask_used": registration_mask_file is not None,
         },
     )
 
 
 def run_tissue_seg_atlas_registration(
-    t1_file: Path, outdir: Path, registration_mask_file: Path = None
+    t1_file: Path,
+    outdir: Path,
+    registration_mask_file: Path = None,
+    atlas: str = "brats_mni152",
 ) -> None:
     """
-    Performs tissue segmentation for gm, wm, csf by registering an atlas to the input t1 file and transforming atlas tissue maps using
-    the obtained transformation.
+    Performs tissue segmentation for gm, wm, csf by registering an atlas to the input t1 file and transforming atlas tissue
+    probability maps using the obtained transformation. Produces one probability map per tissue.
 
     Parameters:
         t1_file (Path): Path to the t1 nifti.
         outdir (Path): Path to output directory. Usually exam directory.
         registration_mask_file (Path): Path to a mask for registration metric. Voxel with value 0 are ignored.
+        atlas (str): Atlas whose skull-stripped T1 template and tissue probability maps are used.
+            One of "brats_mni152" (default), "mni152", or "sri24".
 
     Returns:
         None
@@ -153,7 +216,7 @@ def run_tissue_seg_atlas_registration(
 
     # Prepare directories
     atlas_pbmap_dirs = {
-        tissue: ATLAS_TISSUE_PBMAPS_DIR.format(tissue=tissue)
+        tissue: ATLAS_TISSUE_PBMAP_SCHEMA.format(atlas=atlas, tissue=tissue)
         for tissue in ["csf", "gm", "wm"]
     }
     outprefix = TISSUE_SEG_BASE_SCHEMA.format(base_dir=outdir)
@@ -161,7 +224,7 @@ def run_tissue_seg_atlas_registration(
 
     # Read images
     t1_patient = ants.image_read(str(t1_file))
-    t1_atlas = ants.image_read(str(ATLAS_T1_DIR))
+    t1_atlas = ants.image_read(str(ATLAS_STRIPPED_SCHEMA.format(atlas=atlas)))
 
     reg_kwargs = {}
     if registration_mask_file is not None:
@@ -181,34 +244,7 @@ def run_tissue_seg_atlas_registration(
     )
     transforms_path = reg["fwdtransforms"]
 
-    # Transform atlas tissues
-    tissues_atlas = ants.image_read(str(ATLAS_TISSUES_DIR))
-    tissues_warped = ants.apply_transforms(
-        fixed=t1_patient.clone("unsigned int"),
-        moving=tissues_atlas,
-        transformlist=transforms_path,
-        interpolator="nearestNeighbor",
-    )
-    ants.image_write(tissues_warped, str(TISSUE_SEG_SCHEMA.format(base_dir=outdir)))
-
-    logger.debug(
-        f"Registration step done, saving output to {TISSUE_SEG_SCHEMA.format(base_dir=outdir)}"
-    )
     logger.info("Generating pbmaps...")
-
-    # Transform atlas tissue segmentations
-    tissues_warped_nifti = nib.load(str(TISSUE_SEG_SCHEMA.format(base_dir=outdir)))
-    tissues_warped_affine = tissues_warped_nifti.affine
-    for tissue, label in TISSUE_LABELS.items():
-        eq = np.rint(tissues_warped_nifti.get_fdata()).astype(np.int32)
-        tissue_mask = (np.isclose(eq, label)).astype(np.int32)
-        tissue_mask_nifti = nib.Nifti1Image(
-            tissue_mask,
-            affine=tissues_warped_affine,
-        )
-        nib.save(
-            tissue_mask_nifti, str(TISSUE_SCHEMA.format(base_dir=outdir, tissue=tissue))
-        )
 
     # Transform atlas tissue probability maps
     for tissue, pbmap_dir in atlas_pbmap_dirs.items():
@@ -230,14 +266,19 @@ def run_tissue_seg_atlas_registration(
     )
 
 
-def run_tissue_seg_atropos_n4(t1_file: Path, outdir: Path) -> None:
+def run_tissue_seg_atropos_n4(
+    t1_file: Path, outdir: Path, atlas: str = "brats_mni152"
+) -> None:
     """
     Performs tissue segmentation for gm, wm, csf by running the antsAtroposN4.sh binary with the
-    atlas tissue probability maps as spatial priors and the brain mask as constraint.
+    atlas tissue probability maps as spatial priors and the brain mask as constraint. Produces one
+    probability map per tissue.
 
     Parameters:
         t1_file (Path): Path to the t1 nifti.
         outdir (Path): Path to output directory. Usually exam directory.
+        atlas (str): Atlas whose tissue probability maps are used as spatial priors. One of
+            "brats_mni152" (default), "mni152", or "sri24".
 
     Returns:
         None
@@ -257,7 +298,7 @@ def run_tissue_seg_atropos_n4(t1_file: Path, outdir: Path) -> None:
     priors_dir.mkdir(parents=True, exist_ok=True)
     for tissue, label in TISSUE_LABELS.items():
         shutil.copyfile(
-            str(ATLAS_TISSUE_PBMAPS_DIR.format(tissue=tissue)),
+            str(ATLAS_TISSUE_PBMAP_SCHEMA.format(atlas=atlas, tissue=tissue)),
             str(priors_dir / f"prior{int(label)}.nii.gz"),
         )
 
@@ -281,22 +322,10 @@ def run_tissue_seg_atropos_n4(t1_file: Path, outdir: Path) -> None:
             f"antsAtroposN4.sh exited {proc.returncode} for {t1_file}; see logs in {outprefix}"
         )
 
-    shutil.move(
-        f"{seg_prefix}Segmentation.nii.gz", str(TISSUE_SEG_SCHEMA.format(base_dir=outdir))
-    )
-
-    seg_nifti = nib.load(str(TISSUE_SEG_SCHEMA.format(base_dir=outdir)))
-    seg_data = np.rint(seg_nifti.get_fdata()).astype(np.int32)
     for tissue, label in TISSUE_LABELS.items():
         shutil.move(
             f"{seg_prefix}SegmentationPosteriors{int(label)}.nii.gz",
             str(TISSUE_PBMAP_SCHEMA.format(base_dir=outdir, tissue=tissue)),
-        )
-
-        tissue_mask = (seg_data == int(label)).astype(np.int32)
-        nib.save(
-            nib.Nifti1Image(tissue_mask, affine=seg_nifti.affine),
-            str(TISSUE_SCHEMA.format(base_dir=outdir, tissue=tissue)),
         )
 
     time_spent = time.time() - start_time

@@ -21,6 +21,8 @@ from predict_gbm.preprocessing.longitudinal_dirac import (
     warp_image_to_preop,
 )
 from predict_gbm.utils.constants import (
+    ATLAS_STRIPPED_SCHEMA,
+    ATLAS_UNSTRIPPED_SCHEMA,
     BRAIN_MASK_SCHEMA,
     BRAINLES_LOGFILE_SCHEMA,
     CONFIG_STEP_NORM_SS_COREGISTER,
@@ -29,17 +31,12 @@ from predict_gbm.utils.constants import (
     LONGITUDINAL_WARP_SCHEMA,
     MODALITY_STRIPPED_SCHEMA,
     RECURRENCE_SCHEMA,
-    REGISTRATION_ATLAS_MNI152_DIR,
-    REGISTRATION_ATLAS_SRI24_DIR,
     REGISTRATION_TRAFO_SCHEMA,
     SKULL_STRIP_ALGORITHM_SYNTHSTRIP,
 )
 from predict_gbm.utils.utils import update_config, validate_additional_modality_names
 
-REGISTRATION_ATLASES = {
-    "mni152": REGISTRATION_ATLAS_MNI152_DIR,
-    "sri24": REGISTRATION_ATLAS_SRI24_DIR,
-}
+SUPPORTED_ATLASES = ("brats_mni152", "mni152", "sri24")
 
 
 def normalize(img_file: Path, outfile: Path) -> None:
@@ -180,7 +177,7 @@ def norm_ss_coregister(
     skull_strip: bool = True,
     additional_modalities: Optional[Dict[str, Path]] = None,
     additional_quantitative_modalities: Optional[Dict[str, Path]] = None,
-    atlas: str = "mni152",
+    atlas: str = "brats_mni152",
 ) -> None:
     """
     Performs normalization, skull stripping and co-registration based on the brainles preprocessing module.
@@ -198,7 +195,8 @@ def norm_ss_coregister(
             additional_modalities, but processed without intensity normalization (e.g. for
             quantitative maps like ADC). Names must not collide with each other, with
             additional_modalities, or with the reserved modality names (t1, t1c, t2, flair).
-        atlas (str): Atlas to register the patient into. One of "mni152" (default) or "sri24".
+        atlas (str): Atlas to register the patient into. One of "brats_mni152" (default),
+            "mni152", or "sri24".
 
     Returns:
         None
@@ -215,9 +213,9 @@ def norm_ss_coregister(
         additional_modalities, additional_quantitative_modalities
     )
 
-    if atlas not in REGISTRATION_ATLASES:
+    if atlas not in SUPPORTED_ATLASES:
         raise ValueError(
-            f"Unsupported atlas '{atlas}'. Expected one of: {sorted(REGISTRATION_ATLASES)}."
+            f"Unsupported atlas '{atlas}'. Expected one of: {sorted(SUPPORTED_ATLASES)}."
         )
 
     Path(outdir).mkdir(parents=True, exist_ok=True)
@@ -254,13 +252,15 @@ def norm_ss_coregister(
             normalize=False,
         )
 
+    atlas_schema = ATLAS_UNSTRIPPED_SCHEMA if skull_strip else ATLAS_STRIPPED_SCHEMA
+
     registrator = ANTsRegistrator(transformation_params={"defaultvalue": 0})
     preprocessor = AtlasCentricPreprocessor(
         center_modality=center,
         moving_modalities=moving,
         registrator=registrator,
         brain_extractor=SynthStripExtractor(),
-        atlas_image_path=REGISTRATION_ATLASES[atlas],
+        atlas_image_path=atlas_schema.format(atlas=atlas),
     )
 
     preprocessor.run(

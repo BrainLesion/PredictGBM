@@ -5,6 +5,7 @@ import matplotlib.patches as mpatches
 from pathlib import Path
 from typing import Dict, List, Tuple
 from predict_gbm.base import BasePipe
+from predict_gbm.preprocessing.tissue_segmentation import derive_tissue_labelmap
 from predict_gbm.utils.utils import (
     compute_center_of_mass,
     load_mri_data,
@@ -15,7 +16,6 @@ from predict_gbm.utils.constants import (
     MODALITY_STRIPPED_SCHEMA,
     PREDICTION_OUTPUT_SCHEMA,
     RECURRENCE_SCHEMA,
-    TISSUE_SEG_SCHEMA,
     TUMORSEG_SCHEMA,
     TUMOR_VISUALIZATION_SCHEMA,
     RECURRENCE_VISUALIZATION_SCHEMA,
@@ -206,7 +206,7 @@ def plot_model_multislice(
         MODALITY_STRIPPED_SCHEMA.format(base_dir=exam_dir, modality="t1c")
     )
     tumorseg_data = load_mri_data(TUMORSEG_SCHEMA.format(base_dir=exam_dir))
-    tissueseg_data = load_mri_data(TISSUE_SEG_SCHEMA.format(base_dir=exam_dir))
+    tissueseg_data = derive_tissue_labelmap(exam_dir).get_fdata()
     model_data = load_and_resample_mri_data(
         PREDICTION_OUTPUT_SCHEMA.format(base_dir=exam_dir, algo_id=model_id.lower()),
         resample_params=t1c_data.shape,

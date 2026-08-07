@@ -18,9 +18,9 @@ from brainles_preprocessing.normalization.percentile_normalizer import (
 )
 from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtractor
 from predict_gbm.utils.constants import (
+    ATLAS_STRIPPED_SCHEMA,
+    ATLAS_UNSTRIPPED_SCHEMA,
     LONGITUDINAL_WARP_SCHEMA,
-    REGISTRATION_ATLAS_MNI152_DIR,
-    REGISTRATION_ATLAS_SRI24_DIR,
 )
 
 # Silence third-party warnings that clutter test output
@@ -176,7 +176,9 @@ class TestNormSsCoregistration(unittest.TestCase):
         self.assertIsNone(by_name["adc"].normalized_bet_output_path)
 
     @patch("predict_gbm.preprocessing.norm_ss_coregistration.AtlasCentricPreprocessor")
-    def test_norm_ss_coregister_defaults_to_mni152_atlas(self, preprocessor_cls_mock):
+    def test_norm_ss_coregister_defaults_to_brats_mni152_atlas(
+        self, preprocessor_cls_mock
+    ):
         t1 = self._save_mock_nifti("t1.nii.gz")
         t1c = self._save_mock_nifti("t1c.nii.gz")
         t2 = self._save_mock_nifti("t2.nii.gz")
@@ -185,7 +187,21 @@ class TestNormSsCoregistration(unittest.TestCase):
         norm_ss_coregister(t1, t1c, t2, fl, self.outdir)
 
         atlas_image_path = preprocessor_cls_mock.call_args.kwargs["atlas_image_path"]
-        self.assertEqual(atlas_image_path, REGISTRATION_ATLAS_MNI152_DIR)
+        self.assertEqual(
+            atlas_image_path, ATLAS_UNSTRIPPED_SCHEMA.format(atlas="brats_mni152")
+        )
+
+    @patch("predict_gbm.preprocessing.norm_ss_coregistration.AtlasCentricPreprocessor")
+    def test_norm_ss_coregister_can_switch_to_mni152_atlas(self, preprocessor_cls_mock):
+        t1 = self._save_mock_nifti("t1.nii.gz")
+        t1c = self._save_mock_nifti("t1c.nii.gz")
+        t2 = self._save_mock_nifti("t2.nii.gz")
+        fl = self._save_mock_nifti("flair.nii.gz")
+
+        norm_ss_coregister(t1, t1c, t2, fl, self.outdir, atlas="mni152")
+
+        atlas_image_path = preprocessor_cls_mock.call_args.kwargs["atlas_image_path"]
+        self.assertEqual(atlas_image_path, ATLAS_UNSTRIPPED_SCHEMA.format(atlas="mni152"))
 
     @patch("predict_gbm.preprocessing.norm_ss_coregistration.AtlasCentricPreprocessor")
     def test_norm_ss_coregister_can_switch_to_sri24_atlas(self, preprocessor_cls_mock):
@@ -197,7 +213,23 @@ class TestNormSsCoregistration(unittest.TestCase):
         norm_ss_coregister(t1, t1c, t2, fl, self.outdir, atlas="sri24")
 
         atlas_image_path = preprocessor_cls_mock.call_args.kwargs["atlas_image_path"]
-        self.assertEqual(atlas_image_path, REGISTRATION_ATLAS_SRI24_DIR)
+        self.assertEqual(atlas_image_path, ATLAS_UNSTRIPPED_SCHEMA.format(atlas="sri24"))
+
+    @patch("predict_gbm.preprocessing.norm_ss_coregistration.AtlasCentricPreprocessor")
+    def test_norm_ss_coregister_uses_stripped_atlas_when_skull_strip_false(
+        self, preprocessor_cls_mock
+    ):
+        t1 = self._save_mock_nifti("t1.nii.gz")
+        t1c = self._save_mock_nifti("t1c.nii.gz")
+        t2 = self._save_mock_nifti("t2.nii.gz")
+        fl = self._save_mock_nifti("flair.nii.gz")
+
+        norm_ss_coregister(t1, t1c, t2, fl, self.outdir, skull_strip=False)
+
+        atlas_image_path = preprocessor_cls_mock.call_args.kwargs["atlas_image_path"]
+        self.assertEqual(
+            atlas_image_path, ATLAS_STRIPPED_SCHEMA.format(atlas="brats_mni152")
+        )
 
     def test_norm_ss_coregister_rejects_unsupported_atlas(self):
         t1 = self._save_mock_nifti("t1.nii.gz")
