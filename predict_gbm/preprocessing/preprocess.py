@@ -38,7 +38,8 @@ class BasePreprocessor:
     Parameters:
         outdir (Path): Output directory containing either nifti converted data or skull stripped niftis in the
             expected directory structure.
-        mask_tissueseg (bool): If true, masks out the tumor region for the tissue segmentation step.
+        mask_tissueseg (bool): If true, masks out the tumor core for the tissue segmentation step, so that
+            tumor voxels are ignored by the atlas registration metric. Defaults to true.
         perform_coregistration (bool): If true, performs normalization, skull stripping, co-registration
         perform_skull_stripping (bool): If true, performs skull stripping during co-registration step.
         perform_tumorseg (bool): If true, performs tumor segmentation via BRATS.
@@ -54,7 +55,7 @@ class BasePreprocessor:
     def __init__(
         self,
         outdir: Path,
-        mask_tissueseg: bool = False,
+        mask_tissueseg: bool = True,
         perform_coregistration: bool = True,
         perform_skull_stripping: bool = True,
         perform_tumorseg: bool = True,
@@ -184,6 +185,8 @@ class DicomPreprocessor(BasePreprocessor):
          flair_dir (Path): Path to the directory with the DICOM files for Flair.
          perform_tissueseg (bool): If true, performs tissue segmentation.
          outdir (Path): Base directory for the output. Usually exam directory.
+         mask_tissueseg (bool): If true, masks out the tumor core for the tissue segmentation step, so that
+            tumor voxels are ignored by the atlas registration metric. Defaults to true.
          additional_modality_dirs (Dict[str, Path], optional): Mapping of additional modality
             name to its DICOM directory, processed with intensity normalization.
          additional_quantitative_modality_dirs (Dict[str, Path], optional): Same as
@@ -200,6 +203,7 @@ class DicomPreprocessor(BasePreprocessor):
         flair_dir: Path,
         perform_tissueseg: bool,
         outdir: Path,
+        mask_tissueseg: bool = True,
         additional_modality_dirs: Optional[Dict[str, Path]] = None,
         additional_quantitative_modality_dirs: Optional[Dict[str, Path]] = None,
         dcm2niix_location: Path = Path("dcm2niix"),
@@ -208,6 +212,7 @@ class DicomPreprocessor(BasePreprocessor):
         super().__init__(
             outdir=outdir,
             cuda_device=cuda_device,
+            mask_tissueseg=mask_tissueseg,
             perform_coregistration=True,
             perform_skull_stripping=True,
             perform_tumorseg=True,
@@ -272,6 +277,8 @@ class NiftiPreprocessor(BasePreprocessor):
         flair_file (Path): Path to the NIfTI file with the flair data.
         perform_tissueseg (bool): If true, performs tissue segmentation.
         outdir (Path): Base directory for the output. Usually exam directory.
+        mask_tissueseg (bool): If true, masks out the tumor core for the tissue segmentation step, so that
+            tumor voxels are ignored by the atlas registration metric. Defaults to true.
         cuda_device (str): GPU device to use.
         is_coregistered (bool): True if the provided data has already been co-registered to SRI-24 space and skull stripped.
         is_skull_stripped (bool): True if the provided data has already been normalized, skull stripped and co-registered.
@@ -292,6 +299,7 @@ class NiftiPreprocessor(BasePreprocessor):
         outdir: Path,
         is_coregistered: bool,
         is_skull_stripped: bool,
+        mask_tissueseg: bool = True,
         additional_modalities: Optional[Dict[str, Path]] = None,
         additional_quantitative_modalities: Optional[Dict[str, Path]] = None,
         tumorseg_file: Optional[Path] = None,
@@ -300,6 +308,7 @@ class NiftiPreprocessor(BasePreprocessor):
         super().__init__(
             outdir=outdir,
             cuda_device=cuda_device,
+            mask_tissueseg=mask_tissueseg,
             perform_coregistration=not is_coregistered,
             perform_skull_stripping=not is_skull_stripped,
             perform_tumorseg=tumorseg_file is None,

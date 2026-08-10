@@ -13,6 +13,7 @@ from predict_gbm.preprocessing.preprocess import (
 from predict_gbm.utils.constants import (
     LONGITUDINAL_WARP_SCHEMA,
     MODALITY_STRIPPED_SCHEMA,
+    REGISTRATION_MASK_SCHEMA,
     TUMORSEG_SCHEMA,
 )
 
@@ -73,6 +74,62 @@ class TestDicomPreprocessor(unittest.TestCase):
         self.assertEqual(set(norm_kwargs["additional_modalities"].keys()), {"swi"})
         self.assertEqual(
             set(norm_kwargs["additional_quantitative_modalities"].keys()), {"adc"}
+        )
+
+    @patch("predict_gbm.preprocessing.preprocess.run_tissue_seg")
+    @patch("predict_gbm.preprocessing.preprocess.generate_registration_mask")
+    @patch("predict_gbm.preprocessing.preprocess.run_brats")
+    @patch("predict_gbm.preprocessing.preprocess.norm_ss_coregister")
+    @patch("predict_gbm.preprocessing.preprocess.dicom_to_nifti")
+    def test_registration_mask_forwarded_to_tissueseg_by_default(
+        self,
+        dicom_to_nifti_mock,
+        norm_ss_coregister_mock,
+        run_brats_mock,
+        generate_mask_mock,
+        tissue_seg_mock,
+    ):
+        preprocessor = DicomPreprocessor(
+            t1_dir=Path("t1dir"),
+            t1c_dir=Path("t1cdir"),
+            t2_dir=Path("t2dir"),
+            flair_dir=Path("flairdir"),
+            perform_tissueseg=True,
+            outdir=self.outdir,
+        )
+        preprocessor.run()
+
+        expected_mask = REGISTRATION_MASK_SCHEMA.format(base_dir=self.outdir)
+        self.assertEqual(
+            tissue_seg_mock.call_args.kwargs["registration_mask_file"], expected_mask
+        )
+
+    @patch("predict_gbm.preprocessing.preprocess.run_tissue_seg")
+    @patch("predict_gbm.preprocessing.preprocess.generate_registration_mask")
+    @patch("predict_gbm.preprocessing.preprocess.run_brats")
+    @patch("predict_gbm.preprocessing.preprocess.norm_ss_coregister")
+    @patch("predict_gbm.preprocessing.preprocess.dicom_to_nifti")
+    def test_registration_mask_omitted_when_masking_disabled(
+        self,
+        dicom_to_nifti_mock,
+        norm_ss_coregister_mock,
+        run_brats_mock,
+        generate_mask_mock,
+        tissue_seg_mock,
+    ):
+        preprocessor = DicomPreprocessor(
+            t1_dir=Path("t1dir"),
+            t1c_dir=Path("t1cdir"),
+            t2_dir=Path("t2dir"),
+            flair_dir=Path("flairdir"),
+            perform_tissueseg=True,
+            outdir=self.outdir,
+            mask_tissueseg=False,
+        )
+        preprocessor.run()
+
+        self.assertNotIn(
+            "registration_mask_file", tissue_seg_mock.call_args.kwargs
         )
 
 
