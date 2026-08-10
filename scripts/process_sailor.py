@@ -7,13 +7,13 @@ from predict_gbm.utils.parsing import PatientDataset
 from predict_gbm.utils.constants import (
     MODALITY_STRIPPED_SCHEMA,
     TUMORSEG_SCHEMA,
-    TISSUE_SEG_SCHEMA,
+    TISSUE_PBMAP_SCHEMA,
     RECURRENCE_SCHEMA,
 )
 from predict_gbm.preprocessing import (
     norm_ss_coregister,
     run_brats,
-    run_tissue_seg_registration,
+    run_tissue_seg,
     register_recurrence,
 )
 
@@ -96,11 +96,14 @@ def process_exam(modalities: dict, outdir: Path, cuda_device: str) -> None:
             cuda_device=cuda_device,
         )
 
-    tissueseg_file = TISSUE_SEG_SCHEMA.format(base_dir=outdir)
-    if tissueseg_file.exists():
+    tissueseg_files = [
+        TISSUE_PBMAP_SCHEMA.format(base_dir=outdir, tissue=tissue)
+        for tissue in ("gm", "wm", "csf")
+    ]
+    if all(f.exists() for f in tissueseg_files):
         logger.info(f"{outdir}: tissue segmentation already done, skipping.")
     else:
-        run_tissue_seg_registration(
+        run_tissue_seg(
             t1_file=MODALITY_STRIPPED_SCHEMA.format(base_dir=outdir, modality="t1c"),
             outdir=outdir,
         )
