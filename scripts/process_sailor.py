@@ -61,8 +61,13 @@ def resolve_modalities(exam: dict, missing: list) -> dict | None:
     }
 
 
-def process_exam(modalities: dict, outdir: Path, cuda_device: str) -> None:
-    """Runs atlas registration/skull stripping, tumor segmentation and tissue segmentation for a single exam."""
+def process_exam(
+    modalities: dict, outdir: Path, cuda_device: str, override: bool = False
+) -> None:
+    """
+    Runs atlas registration/skull stripping, tumor segmentation and tissue segmentation for a single exam.
+    If override is True, all steps are rerun even if their outputs already exist.
+    """
     outdir.mkdir(parents=True, exist_ok=True)
 
     additional_quantitative_modalities = (
@@ -70,7 +75,7 @@ def process_exam(modalities: dict, outdir: Path, cuda_device: str) -> None:
     )
 
     t1c_stripped = MODALITY_STRIPPED_SCHEMA.format(base_dir=outdir, modality="t1c")
-    if t1c_stripped.exists():
+    if t1c_stripped.exists() and not override:
         logger.info(f"{outdir}: skull stripping already done, skipping.")
     else:
         norm_ss_coregister(
@@ -84,7 +89,7 @@ def process_exam(modalities: dict, outdir: Path, cuda_device: str) -> None:
         )
 
     tumorseg_file = TUMORSEG_SCHEMA.format(base_dir=outdir)
-    if tumorseg_file.exists():
+    if tumorseg_file.exists() and not override:
         logger.info(f"{outdir}: tumor segmentation already done, skipping.")
     else:
         run_brats(
@@ -100,7 +105,7 @@ def process_exam(modalities: dict, outdir: Path, cuda_device: str) -> None:
         TISSUE_PBMAP_SCHEMA.format(base_dir=outdir, tissue=tissue)
         for tissue in ("gm", "wm", "csf")
     ]
-    if all(f.exists() for f in tissueseg_files):
+    if all(f.exists() for f in tissueseg_files) and not override:
         logger.info(f"{outdir}: tissue segmentation already done, skipping.")
     else:
         run_tissue_seg(
@@ -131,6 +136,11 @@ if __name__ == "__main__":
         type=str,
         default="/mnt/Drive4/lucas/SAILOR/processed",
         help="Directory to save processed output to.",
+    )
+    parser.add_argument(
+        "-override",
+        action="store_true",
+        help="Rerun every step even if its output already exists, overwriting previous results.",
     )
     args = parser.parse_args()
 
@@ -163,7 +173,7 @@ if __name__ == "__main__":
 
             exam_outdir = outdir_root / patient_id / dir_name
             try:
-                process_exam(modalities, exam_outdir, args.cuda_device)
+                process_exam(modalities, exam_outdir, args.cuda_device, args.override)
                 exam_outdirs[dir_name] = (exam_outdir, exam["timepoint"])
             except Exception:
                 logger.exception(f"{patient_id}/{dir_name}: processing failed, skipping.")
@@ -183,7 +193,7 @@ if __name__ == "__main__":
                 continue
 
             recurrence_file = RECURRENCE_SCHEMA.format(base_dir=exam_outdir)
-            if recurrence_file.exists():
+            if recurrence_file.exists() and not args.override:
                 logger.info(f"{patient_id}/{dir_name}: recurrence registration already done, skipping.")
                 continue
 
