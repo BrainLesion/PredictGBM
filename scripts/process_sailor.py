@@ -105,9 +105,11 @@ def process_exam(
         TISSUE_PBMAP_SCHEMA.format(base_dir=outdir, tissue=tissue)
         for tissue in ("gm", "wm", "csf")
     ]
-    if all(f.exists() for f in tissueseg_files) and not override:
+    #if all(f.exists() for f in tissueseg_files) and not override:
+    if False:
         logger.info(f"{outdir}: tissue segmentation already done, skipping.")
     else:
+        print("Tissue segmentation overiding old files by design")
         run_tissue_seg(
             t1_file=MODALITY_STRIPPED_SCHEMA.format(base_dir=outdir, modality="t1c"),
             outdir=outdir,
