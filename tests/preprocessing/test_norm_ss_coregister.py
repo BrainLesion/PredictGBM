@@ -20,6 +20,8 @@ from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtract
 from predict_gbm.utils.constants import (
     ATLAS_STRIPPED_SCHEMA,
     ATLAS_UNSTRIPPED_SCHEMA,
+    LONGITUDINAL_AFFINE_SCHEMA,
+    LONGITUDINAL_DISP_SCHEMA,
     LONGITUDINAL_WARP_SCHEMA,
 )
 
@@ -483,6 +485,63 @@ class TestNormSsCoregistration(unittest.TestCase):
             register_recurrence(
                 pre, post, seg, self.outdir, additional_modalities={"t1c": post}
             )
+
+    @patch("predict_gbm.preprocessing.norm_ss_coregistration.ants.image_write")
+    @patch("predict_gbm.preprocessing.norm_ss_coregistration.ants.apply_transforms")
+    @patch("predict_gbm.preprocessing.norm_ss_coregistration.ants.registration")
+    @patch("predict_gbm.preprocessing.norm_ss_coregistration.ants.image_read")
+    def test_register_recurrence_linear_uses_ants_registration(
+        self,
+        image_read_mock,
+        registration_mock,
+        apply_transforms_mock,
+        image_write_mock,
+    ):
+        for algorithm, expected_transform in (
+            ("affine", "Affine"),
+            ("rigid", "Rigid"),
+        ):
+            with self.subTest(algorithm=algorithm):
+                image_read_mock.reset_mock()
+                registration_mock.reset_mock()
+                apply_transforms_mock.reset_mock()
+
+                pre = self._save_mock_nifti("pre.nii.gz")
+                post = self._save_mock_nifti("post.nii.gz")
+                seg = self._save_mock_nifti("seg.nii.gz")
+
+                pre_img = MagicMock()
+                pre_img.clone.return_value = pre_img
+                image_read_mock.side_effect = [pre_img, MagicMock(), MagicMock()]
+
+                trafo_file = self.outdir / "0GenericAffine.mat"
+                trafo_file.write_text("affine")
+                registration_mock.return_value = {
+                    "fwdtransforms": [str(trafo_file)],
+                    "warpedmovout": MagicMock(),
+                }
+                apply_transforms_mock.return_value = MagicMock()
+
+                register_recurrence(
+                    pre,
+                    post,
+                    seg,
+                    self.outdir,
+                    registration_algorithm=algorithm,
+                )
+
+                self.assertEqual(
+                    registration_mock.call_args.kwargs["type_of_transform"],
+                    expected_transform,
+                )
+                apply_transforms_mock.assert_called_once()
+                # Linear transforms are stored as .mat, not as a displacement field.
+                self.assertTrue(
+                    LONGITUDINAL_AFFINE_SCHEMA.format(base_dir=self.outdir).exists()
+                )
+                self.assertFalse(
+                    LONGITUDINAL_DISP_SCHEMA.format(base_dir=self.outdir).exists()
+                )
 
     def test_register_recurrence_invalid_algorithm_raises(self):
         pre = self._save_mock_nifti("pre.nii.gz")

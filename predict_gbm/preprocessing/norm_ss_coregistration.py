@@ -27,6 +27,7 @@ from predict_gbm.utils.constants import (
     BRAINLES_LOGFILE_SCHEMA,
     CONFIG_STEP_NORM_SS_COREGISTER,
     CONFIG_STEP_REGISTER_RECURRENCE,
+    LONGITUDINAL_AFFINE_SCHEMA,
     LONGITUDINAL_DISP_SCHEMA,
     LONGITUDINAL_WARP_SCHEMA,
     MODALITY_STRIPPED_SCHEMA,
@@ -37,6 +38,17 @@ from predict_gbm.utils.constants import (
 from predict_gbm.utils.utils import update_config, validate_additional_modality_names
 
 SUPPORTED_ATLASES = ("brats_mni152", "mni152", "sri24")
+
+# Longitudinal registration algorithms backed by ANTs, mapping the public algorithm name to
+# the ants.registration type_of_transform and the schema under which the resulting forward
+# transform is stored. Deformable transforms are displacement fields (.nii.gz), linear ones
+# are ANTs transform matrices (.mat).
+ANTS_REGISTRATION_TRANSFORMS = {
+    "syn": ("antsRegistrationSyN[s,2]", LONGITUDINAL_DISP_SCHEMA),
+    "affine": ("Affine", LONGITUDINAL_AFFINE_SCHEMA),
+    "rigid": ("Rigid", LONGITUDINAL_AFFINE_SCHEMA),
+}
+SUPPORTED_REGISTRATION_ALGORITHMS = ("dirac",) + tuple(ANTS_REGISTRATION_TRANSFORMS)
 
 
 def normalize(img_file: Path, outfile: Path) -> None:
@@ -299,7 +311,8 @@ def register_recurrence(
         fixed_mask_file (Path): Path to a mask in fixed space used for registration.
         moving_mask_file (Path): Path to a mask in moving space used for registration.
         registration_algorithm (str): Longitudinal registration approach. Supported
-            values are "dirac" (default, 3-step pipeline) and "syn" (legacy ANTs SyN).
+            values are "dirac", "syn" (ANTs SyN), "affine" (ANTs affine) and
+            "rigid" (ANTs rigid).
         additional_modalities (Optional[Dict[str, Path]]): Mapping of modality name to its
             post-operative (followup-space) file. Each is warped into preop space alongside
             t1c_post_file. Must not contain the key "t1c".
@@ -317,10 +330,10 @@ def register_recurrence(
         )
 
     algorithm = registration_algorithm.lower()
-    if algorithm not in {"dirac", "syn"}:
+    if algorithm not in SUPPORTED_REGISTRATION_ALGORITHMS:
         raise ValueError(
             f"Unsupported registration_algorithm '{registration_algorithm}'. "
-            "Expected one of: 'dirac', 'syn'."
+            f"Expected one of: {sorted(SUPPORTED_REGISTRATION_ALGORITHMS)}."
         )
 
     config_params = {
@@ -329,7 +342,12 @@ def register_recurrence(
         "use_moving_mask": moving_mask_file is not None,
     }
 
-    if algorithm == "syn":
+    if algorithm in ANTS_REGISTRATION_TRANSFORMS:
+        type_of_transform, trafo_schema = ANTS_REGISTRATION_TRANSFORMS[algorithm]
+        logger.info(
+            f"Running ANTs registration with type_of_transform {type_of_transform}."
+        )
+
         t1c_pre_img = ants.image_read(str(t1c_pre_file))
         t1c_post_img = ants.image_read(str(t1c_post_file))
 
@@ -348,7 +366,7 @@ def register_recurrence(
         reg = ants.registration(
             fixed=t1c_pre_img,
             moving=t1c_post_img,
-            type_of_transform="antsRegistrationSyN[s,2]",
+            type_of_transform=type_of_transform,
             **reg_kwargs,
         )
 
@@ -356,7 +374,7 @@ def register_recurrence(
         recurrence_outfile.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(
             src=reg["fwdtransforms"][0],
-            dst=str(LONGITUDINAL_DISP_SCHEMA.format(base_dir=outdir)),
+            dst=str(trafo_schema.format(base_dir=outdir)),
         )
         ants.image_write(
             reg["warpedmovout"],
