@@ -64,7 +64,9 @@ class TestPredict(unittest.TestCase):
                 brain_mask_file=brain_mask,
                 adc_file=adc,
             )
-            MockModel.assert_called_once_with(algorithm="model", cuda_device="cpu")
+            MockModel.assert_called_once_with(
+                algorithm="model", cuda_device="cpu", growth_model_path=None
+            )
             instance.predict_single.assert_called_once_with(
                 gm=gm,
                 wm=wm,
@@ -75,6 +77,40 @@ class TestPredict(unittest.TestCase):
                 brain_mask=brain_mask,
                 adc=adc,
                 outdir=outdir,
+            )
+
+    def test_predict_tumor_growth_forwards_growth_model_path(self):
+        tumorseg = self.tmp_path / "tumorseg.nii.gz"
+        gm = self.tmp_path / "gm.nii.gz"
+        wm = self.tmp_path / "wm.nii.gz"
+        csf = self.tmp_path / "csf.nii.gz"
+        for p in [tumorseg, gm, wm, csf]:
+            self._save_nifti(p)
+        outdir = self.tmp_path / "out"
+        outdir.mkdir()
+        growth_model_path = self.tmp_path / "custom_model.tar"
+        growth_model_path.touch()
+
+        with patch("predict_gbm.prediction.predict.TumorGrowthModel") as MockModel:
+            instance = MockModel.return_value
+            predict_tumor_growth(
+                tumorseg,
+                gm,
+                wm,
+                csf,
+                model_id="model",
+                outdir=outdir,
+                cuda_device="cpu",
+                growth_model_path=growth_model_path,
+            )
+            MockModel.assert_called_once_with(
+                algorithm="model",
+                cuda_device="cpu",
+                growth_model_path=growth_model_path,
+            )
+            # the output is still named after model_id, not after the image file
+            self.assertEqual(
+                instance.predict_single.call_args.kwargs["outdir"], outdir
             )
 
     def test_predict_tumor_growth_defaults_optional_inputs_to_none(self):

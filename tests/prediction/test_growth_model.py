@@ -37,6 +37,23 @@ class TestTumorGrowthModel(unittest.TestCase):
         with self.assertRaises(ValueError):
             TumorGrowthModel(algorithm="does_not_exist")
 
+    def test_growth_model_path_bypasses_model_dir(self):
+        model_file = self.temp_path / "custom_model.tar"
+        model_file.touch()
+        model = TumorGrowthModel(
+            algorithm="does_not_exist", growth_model_path=model_file
+        )
+        self.assertEqual(model.model_file, model_file)
+        # the algorithm still names the output, see _process_output
+        self.assertEqual(model.algorithm, "does_not_exist")
+
+    def test_growth_model_path_missing_file(self):
+        with self.assertRaises(ValueError):
+            TumorGrowthModel(
+                algorithm="test_model",
+                growth_model_path=self.temp_path / "nonexistent.tar",
+            )
+
     def test_standardize_input_files(self):
         tmp_data_dir = self.temp_path / "tmp_data"
         tmp_data_dir.mkdir()

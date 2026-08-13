@@ -33,15 +33,39 @@ class TumorGrowthModel:
     """A class that utilizes Docker images of tumor growth models to make tumor growth predictions."""
 
     def __init__(
-        self, algorithm: str, cuda_device: Optional[str] = "0", force_cpu: bool = False
+        self,
+        algorithm: str,
+        cuda_device: Optional[str] = "0",
+        force_cpu: bool = False,
+        growth_model_path: Optional[Path] = None,
     ):
-        self.algorithm_list = load_algorithms()
+        """
+        Args:
+            algorithm: Name of the algorithm. Determines the output filenames and, unless
+                growth_model_path is given, which image is looked up in GROWTH_MODEL_DIR.
+            cuda_device: The CUDA devices to use
+            force_cpu: Whether to force CPU execution
+            growth_model_path: Optional path to a growth model docker image (*.tar) outside
+                of GROWTH_MODEL_DIR. If given, this file is used instead of looking up
+                algorithm in GROWTH_MODEL_DIR.
+        """
+        if growth_model_path is not None:
+            model_file = Path(growth_model_path)
+            if not model_file.is_file():
+                raise ValueError(
+                    f"Provided growth model path {model_file} is not a file."
+                )
+            self.algorithm_list = {algorithm: model_file}
+        else:
+            self.algorithm_list = load_algorithms()
 
-        if algorithm not in self.algorithm_list.keys():
-            raise ValueError(f"algorithm not in {self.algorithm_list.keys()}.")
+            if algorithm not in self.algorithm_list.keys():
+                raise ValueError(f"algorithm not in {self.algorithm_list.keys()}.")
+
+            model_file = self.algorithm_list[algorithm]
 
         self.algorithm = algorithm
-        self.model_file = self.algorithm_list[algorithm]
+        self.model_file = model_file
         self.cuda_device = cuda_device
         self.force_cpu = force_cpu
 

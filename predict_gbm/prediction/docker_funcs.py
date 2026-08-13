@@ -6,7 +6,7 @@ from loguru import logger
 from rich.console import Console
 from wandb.apis import InternalApi
 from docker.errors import DockerException
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 try:
     client = docker.from_env()
@@ -83,9 +83,28 @@ def _get_volume_mappings(data_dir: Path, outdir: Path) -> Dict:
     }
 
 
+def _parse_loaded_image_tag(load_output: str) -> Optional[str]:
+    """Extract the image tag from the output of `docker load`, e.g. 'Loaded image: algo:latest'.
+
+    Returns None if the output contains no tag, which happens for untagged images
+    (docker reports 'Loaded image ID: sha256:...' in that case).
+
+    Args:
+        load_output: Combined stdout/stderr of the `docker load` call
+    """
+    for line in load_output.splitlines():
+        if "Loaded image:" in line:
+            return line.split("Loaded image:", 1)[1].strip()
+    return None
+
+
 def _ensure_image(algorithm: str, model_file: Path) -> str:
     """
     Checks if algorithm:latest image is present. If not loads model_file into docker. Returns the image tag.
+
+    The tag stored inside model_file does not necessarily match algorithm (e.g. when the image
+    file is provided via growth_model_path), so the tag reported by `docker load` takes
+    precedence over algorithm:latest.
 
     Args:
         algorithm: Algorithm name
@@ -109,10 +128,30 @@ def _ensure_image(algorithm: str, model_file: Path) -> str:
         )
         try:
             # Load the docker image
-            subprocess.run(["docker", "load", "-i", model_file], check=True)
-            logger.info(f"Image '{image_tag}' loaded successfully from '{model_file}'.")
+            load_result = subprocess.run(
+                ["docker", "load", "-i", str(model_file)],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
         except subprocess.CalledProcessError as e:
             raise e
+        logger.debug(f"Docker load output: \n\r{load_result.stdout}")
+
+        loaded_tag = _parse_loaded_image_tag(load_result.stdout)
+        if loaded_tag is None:
+            raise RuntimeError(
+                f"Loaded '{model_file}' but could not determine an image tag from the docker "
+                f"load output. Please save the image with a tag, e.g. '{image_tag}'."
+            )
+        if loaded_tag != image_tag:
+            logger.info(
+                f"Image in '{model_file}' is tagged '{loaded_tag}' instead of '{image_tag}'. "
+                f"Running the loaded tag."
+            )
+            image_tag = loaded_tag
+        logger.info(f"Image '{image_tag}' loaded successfully from '{model_file}'.")
 
     return image_tag
 
