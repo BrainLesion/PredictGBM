@@ -6,6 +6,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+import nibabel as nib
+import numpy as np
 from loguru import logger
 from brainles_preprocessing.preprocessor import AtlasCentricPreprocessor
 from brainles_preprocessing.registration import ANTsRegistrator
@@ -27,6 +29,7 @@ from predict_gbm.preprocessing.norm_ss_coregistration import (
 from predict_gbm.preprocessing.tissue_segmentation import generate_registration_mask
 from predict_gbm.utils.constants import (
     ATLAS_UNSTRIPPED_SCHEMA,
+    LONGITUDINAL_WARP_SCHEMA,
     MODALITY_STRIPPED_SCHEMA,
     RECURRENCE_SCHEMA,
     REGISTRATION_MASK_SCHEMA,
@@ -269,8 +272,9 @@ def register_followup_to_preop(
     preop_outdir: Path, followup_outdir: Path, override: bool = False
 ) -> None:
     """
-    Registers a follow-up exam to pre-operative space, warping the tumor segmentation and all
-    remaining modalities (t1, t2, flair) alongside the t1c used to drive the registration.
+    Registers a follow-up exam to pre-operative space with an affine transform, warping the tumor
+    segmentation and all remaining modalities (t1, t2, flair) alongside the t1c used to drive the
+    registration.
     """
     recurrence_file = RECURRENCE_SCHEMA.format(base_dir=followup_outdir)
     if recurrence_file.exists() and not override:
@@ -292,8 +296,58 @@ def register_followup_to_preop(
         ),
         recurrence_seg_file=TUMORSEG_SCHEMA.format(base_dir=followup_outdir),
         outdir=followup_outdir,
+        registration_algorithm="affine",
         additional_modalities=additional_modalities,
     )
+
+
+def register_healthy_to_preop(
+    preop_outdir: Path, healthy_outdir: Path, override: bool = False
+) -> None:
+    """
+    Registers the healthy exam to pre-operative space with an affine transform, warping its t1.
+    This is the same step as register_followup_to_preop, except that the healthy exam has no
+    tumor segmentation to co-transform. Since register_recurrence always warps a segmentation,
+    an all-zero placeholder is passed and its warped copy is removed afterwards.
+    """
+    warped_t1_file = LONGITUDINAL_WARP_SCHEMA.format(
+        base_dir=healthy_outdir, modality="t1"
+    )
+    if warped_t1_file.exists() and not override:
+        logger.info(f"{healthy_outdir}: registration to preop already done, skipping.")
+        return
+
+    healthy_t1_file = MODALITY_STRIPPED_SCHEMA.format(
+        base_dir=healthy_outdir, modality="t1"
+    )
+    placeholder_seg_file = healthy_outdir / "empty_seg_placeholder.nii.gz"
+    healthy_t1_img = nib.load(str(healthy_t1_file))
+    nib.save(
+        nib.Nifti1Image(
+            np.zeros(healthy_t1_img.shape, dtype=np.uint8), healthy_t1_img.affine
+        ),
+        str(placeholder_seg_file),
+    )
+
+    try:
+        register_recurrence(
+            t1c_pre_file=MODALITY_STRIPPED_SCHEMA.format(
+                base_dir=preop_outdir, modality="t1c"
+            ),
+            t1c_post_file=healthy_t1_file,
+            recurrence_seg_file=placeholder_seg_file,
+            outdir=healthy_outdir,
+            registration_algorithm="affine",
+        )
+    finally:
+        placeholder_seg_file.unlink(missing_ok=True)
+
+    # register_recurrence stores the warped moving image under the t1c name and the warped
+    # placeholder as the recurrence; the healthy exam only has a t1 and no recurrence.
+    LONGITUDINAL_WARP_SCHEMA.format(base_dir=healthy_outdir, modality="t1c").replace(
+        warped_t1_file
+    )
+    RECURRENCE_SCHEMA.format(base_dir=healthy_outdir).unlink(missing_ok=True)
 
 
 def process_patient(
@@ -313,6 +367,8 @@ def process_patient(
     healthy_dir = sessions[0][1]
     session_roles = {healthy_dir.name: "healthy"}
 
+    healthy_outdir = outdir_root / patient_id / healthy_dir.name
+    healthy_processed = False
     healthy_t1_file = resolve_t1(healthy_dir)
     if healthy_t1_file is None:
         logger.warning(
@@ -322,10 +378,11 @@ def process_patient(
         try:
             process_healthy_exam(
                 t1_file=healthy_t1_file,
-                outdir=outdir_root / patient_id / healthy_dir.name,
+                outdir=healthy_outdir,
                 atlas=atlas,
                 override=override,
             )
+            healthy_processed = True
         except Exception:
             logger.exception(
                 f"{patient_id}/{healthy_dir.name}: healthy exam processing failed, skipping."
@@ -383,6 +440,14 @@ def process_patient(
             processed_followups.append((session_dir.name, exam_outdir))
 
     preop_outdir = outdir_root / patient_id / preop_dir.name
+    if healthy_processed:
+        try:
+            register_healthy_to_preop(preop_outdir, healthy_outdir, override)
+        except Exception:
+            logger.exception(
+                f"{patient_id}/{healthy_dir.name}: registration to preop failed, skipping."
+            )
+
     for session_name, exam_outdir in processed_followups:
         try:
             register_followup_to_preop(preop_outdir, exam_outdir, override)
@@ -396,8 +461,8 @@ if __name__ == "__main__":
     # Processes the GB_healthy_preop_postop_recurrence cohort. Per patient, exams are ordered by
     # the date in their session directory name: the earliest exam is the healthy one and is
     # processed as in scripts/single_t1.py, the 2nd earliest is the pre-operative exam and all
-    # later exams are follow-ups, processed as in scripts/single_nifti.py and registered to
-    # pre-operative space.
+    # later exams are follow-ups, processed as in scripts/single_nifti.py. The healthy exam and
+    # the follow-ups are then affinely registered to pre-operative space.
     #
     # Example:
     # nohup python -u scripts/preprocess_marco_healthy.py -cuda_device 0 > tmp_marco_healthy.out 2>&1 &
@@ -412,7 +477,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-outdir",
         type=str,
-        default="/mnt/Drive3/marco/data/GB_healthy_preop_postop_recurrence/processed",
+        default="/mnt/Drive3/marco/data/GB_healthy_preop_postop_recurrence/preprocessed",
         help="Directory to save processed output to.",
     )
     parser.add_argument(
