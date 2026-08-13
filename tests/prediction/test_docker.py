@@ -24,6 +24,11 @@ class TestDockerFuncs(unittest.TestCase):
     def tearDown(self):
         self.temp_dir.cleanup()
 
+    @staticmethod
+    def _load_result(stdout: str) -> subprocess.CompletedProcess:
+        """Mimic the CompletedProcess returned by a successful `docker load`."""
+        return subprocess.CompletedProcess(args="load", returncode=0, stdout=stdout)
+
     def test_is_cuda_available(self):
         with patch("predict_gbm.prediction.docker_funcs.subprocess.run") as run_mock:
             run_mock.return_value = None
@@ -70,15 +75,43 @@ class TestDockerFuncs(unittest.TestCase):
             tag = docker_funcs._ensure_image("algo", model_file)
             self.assertEqual(tag, "algo:latest")
             run_mock.assert_called_once()
-        # Image missing
+        # Image missing, tar tagged as expected
         with patch("predict_gbm.prediction.docker_funcs.subprocess.run") as run_mock:
             run_mock.side_effect = [
                 subprocess.CalledProcessError(returncode=1, cmd="inspect"),
-                None,
+                self._load_result("Loaded image: algo:latest"),
             ]
             tag = docker_funcs._ensure_image("algo", model_file)
             self.assertEqual(tag, "algo:latest")
             self.assertEqual(run_mock.call_count, 2)
+        # Image missing, tar tagged differently than the algorithm (e.g. growth_model_path)
+        with patch("predict_gbm.prediction.docker_funcs.subprocess.run") as run_mock:
+            run_mock.side_effect = [
+                subprocess.CalledProcessError(returncode=1, cmd="inspect"),
+                self._load_result("Loaded image: other:v2"),
+            ]
+            tag = docker_funcs._ensure_image("algo", model_file)
+            self.assertEqual(tag, "other:v2")
+        # Image missing, tar contains an untagged image
+        with patch("predict_gbm.prediction.docker_funcs.subprocess.run") as run_mock:
+            run_mock.side_effect = [
+                subprocess.CalledProcessError(returncode=1, cmd="inspect"),
+                self._load_result("Loaded image ID: sha256:abc123"),
+            ]
+            with self.assertRaises(RuntimeError):
+                docker_funcs._ensure_image("algo", model_file)
+
+    def test_parse_loaded_image_tag(self):
+        self.assertEqual(
+            docker_funcs._parse_loaded_image_tag(
+                "some noise\nLoaded image: algo:latest\n"
+            ),
+            "algo:latest",
+        )
+        self.assertIsNone(
+            docker_funcs._parse_loaded_image_tag("Loaded image ID: sha256:abc123")
+        )
+        self.assertIsNone(docker_funcs._parse_loaded_image_tag(""))
 
     def test_get_wandb_apikey(self):
         mock_api = MagicMock()

@@ -26,6 +26,7 @@ def predict_tumor_growth(
     flair_file: Optional[Path] = None,
     brain_mask_file: Optional[Path] = None,
     adc_file: Optional[Path] = None,
+    growth_model_path: Optional[Path] = None,
 ) -> None:
     """
     Predict tumor cell concentration with  model_id as growth model.
@@ -36,12 +37,15 @@ def predict_tumor_growth(
         wm_file (Path): Path to the white matter probability map NIfTI file.
         csf_file (Path): Path to the cerebral spinal fluid probability map NIfTI file.
         outdir (Path): Base directory for the model output
-        model_id (str): Identifier for the model. Used to load the model.
+        model_id (str): Identifier for the model. Used to load the model and to name the output.
         cuda_device (str): GPU device to use.
         t1c_file (Optional[Path]): Path to the skull-stripped and normalized T1c image.
         flair_file (Optional[Path]): Path to the skull-stripped and normalized FLAIR image.
         brain_mask_file (Optional[Path]): Path to the skull-stripping brain mask.
         adc_file (Optional[Path]): Path to the skull-stripped and normalized ADC image.
+        growth_model_path (Optional[Path]): Path to a growth model docker image (*.tar).
+            If given, this file is used for prediction instead of looking up model_id in
+            GROWTH_MODEL_DIR. The output is still named after model_id.
 
     Returns:
         None
@@ -60,7 +64,11 @@ def predict_tumor_growth(
         "outdir": outdir,
     }
 
-    model = TumorGrowthModel(algorithm=model_id, cuda_device=cuda_device)
+    model = TumorGrowthModel(
+        algorithm=model_id,
+        cuda_device=cuda_device,
+        growth_model_path=growth_model_path,
+    )
     model.predict_single(**model_kwargs)
     logger.info(f"Finished growth prediction, output saved to {outdir}.")
 

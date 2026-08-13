@@ -31,7 +31,7 @@ pip install predict-gbm
 
 Preprocessed data can be obtained from [huggingface](https://huggingface.co/datasets/LZimmer/PREDICT-GBM).
 
-Ready-to-use dockered versions are available for certain growth models from [huggingface](https://huggingface.co/LZimmer/PREDICT-GBM-Models). Placing them in `predict_gbm/models/` just like the `test_model.tar`, allows you to use them via `algo_id="test_model"`. 
+Ready-to-use dockered versions are available for certain growth models from [huggingface](https://huggingface.co/LZimmer/PREDICT-GBM-Models). Placing them in `predict_gbm/data/models/` just like the `test_model.tar`, allows you to use them via `algo_id="test_model"`. Alternatively, an image stored anywhere else can be passed to `predict_tumor_growth` via `growth_model_path`, in which case `model_id` only determines the output filename. 
 
 ## Use cases and tutorials
 
