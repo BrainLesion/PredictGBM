@@ -149,6 +149,11 @@ RECURRENCE_SCHEMA = OUTPUT_BASE_SCHEMA / LONGITUDINAL_DIR / "recurrence_preop.ni
 LONGITUDINAL_DISP_SCHEMA = (
     OUTPUT_BASE_SCHEMA / LONGITUDINAL_DIR / "longitudinal_trafo.nii.gz"
 )
+# Linear (rigid/affine) longitudinal registration yields an ANTs .mat transform rather
+# than a displacement field, so it is stored alongside under its native extension.
+LONGITUDINAL_AFFINE_SCHEMA = (
+    OUTPUT_BASE_SCHEMA / LONGITUDINAL_DIR / "longitudinal_trafo.mat"
+)
 LONGITUDINAL_WARP_SCHEMA = (
     OUTPUT_BASE_SCHEMA / LONGITUDINAL_DIR / "{modality}_warped_longitudinal.nii.gz"
 )

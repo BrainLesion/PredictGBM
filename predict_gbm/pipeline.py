@@ -148,7 +148,8 @@ class DicomProcessor(BaseProcessor):
         dcm2niix_location (Path): Path to the dcm2niix executable.
         cuda_device (Optional, str): The gpu device to use.
         registration_algorithm (str): Longitudinal registration approach for
-            recurrence mapping. Supported values are "dirac" (default) and "syn".
+            recurrence mapping. Supported values are "dirac" (default), "syn",
+            "affine" and "rigid".
         longitudinal_transform_all (bool): If true, warps all modalities (not just t1c) into
             preop space during longitudinal registration.
     """
@@ -285,7 +286,8 @@ class NiftiProcessor(BaseProcessor):
         additional_quantitative_modalities_followup (Optional, Dict[str, Path]): Same as
             additional_modalities_followup, but not intensity-normalized (e.g. ADC).
         registration_algorithm (str): Longitudinal registration approach for
-            recurrence mapping. Supported values are "dirac" (default) and "syn".
+            recurrence mapping. Supported values are "dirac" (default), "syn",
+            "affine" and "rigid".
         longitudinal_transform_all (bool): If true, warps all modalities (not just t1c) into
             preop space during longitudinal registration.
     """
