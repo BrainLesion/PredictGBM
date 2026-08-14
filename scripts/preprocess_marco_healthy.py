@@ -1,6 +1,8 @@
 import os
 import re
 import json
+import shutil
+import tempfile
 import argparse
 from datetime import datetime
 from pathlib import Path
@@ -40,6 +42,7 @@ from predict_gbm.utils.constants import (
     REGISTRATION_MASK_SCHEMA,
     TISSUE_LABELS,
     TISSUE_PBMAP_SCHEMA,
+    TISSUE_SEG_BASE_SCHEMA,
     TUMORSEG_SCHEMA,
 )
 
@@ -56,9 +59,15 @@ T1_LIKE_DESCRIPTION_PATTERN = re.compile(r"t1|mprage|s3di|bravo|fspgr|tfl", re.I
 # Growth models run on every pre-operative and follow-up exam. The model id, which names the
 # prediction output, is the file stem of the docker image (e.g. sbtc.tar -> "sbtc").
 DEFAULT_GROWTH_MODEL_PATHS = [
-    "/mnt/Drive4/lucas/growth_models/sbtc.tar",
-    "/mnt/Drive4/lucas/growth_models/unet1.tar",
+    "/mnt/Drive4/lucas/growth_models/predict-gbm/sbtc.tar",
+    "/mnt/Drive4/lucas/growth_models/predict-gbm/unet1.tar",
 ]
+
+# The antsAtroposN4 tissue segmentation of the healthy exams is kept beside the atlas registration
+# one instead of replacing it, so that the two can be compared. Only the directories differ: the
+# file names inside them are the ones the standard schemas produce.
+ATROPOS_TISSUE_SEG_FOLDER = "tissue_segmentation_atropos"
+ATROPOS_LONGITUDINAL_FOLDER = "longitudinal_atropos"
 
 
 def parse_session_date(session_dir: Path) -> Optional[datetime]:
@@ -163,8 +172,8 @@ def process_healthy_exam(
     """
     Processes the healthy (earliest) exam exactly as scripts/single_t1.py does: normalization,
     skull stripping and atlas co-registration with the t1 as the only, center modality, followed
-    by antsAtroposN4 tissue segmentation. If override is True, all steps are rerun even if their
-    outputs already exist.
+    by atlas registration tissue segmentation. If override is True, all steps are rerun even if
+    their outputs already exist.
     """
     outdir.mkdir(parents=True, exist_ok=True)
     logger.info(f"Starting single-T1 preprocessing for {t1_file}.")
@@ -199,19 +208,37 @@ def process_healthy_exam(
         )
         preprocessor.run()
 
-    # Tissue segmentation. antsAtroposN4 uses the atlas tissue probability maps as spatial priors
-    # without registering them, so the atlas has to match the space the exam was registered into.
+    # Tissue segmentation. The healthy exam has no tumor, so the atlas is registered to it without
+    # a registration mask.
     if tissueseg_done(outdir) and not override:
         logger.info(f"{outdir}: tissue segmentation already done, skipping.")
     else:
+        clear_tissue_seg(outdir)
         run_tissue_seg(
             t1_file=t1_stripped_file,
             outdir=outdir,
-            algorithm="antsAtroposN4",
+            algorithm="atlas_registration",
             atlas=atlas,
         )
 
     logger.info(f"Finished single-T1 preprocessing. Output saved to {outdir}.")
+
+
+def clear_tissue_seg(outdir: Path) -> None:
+    """
+    Removes the tissue segmentation directory of an exam, so that the segmentation about to be
+    run starts from an empty one.
+
+    run_tissue_seg_atlas_registration hands the tissue segmentation directory to ants.registration
+    as its outprefix, and ants.registration does not track the files it writes: it recovers them
+    afterwards by globbing "<outprefix>*[0-9]*" and passes every match on as a transform. Any file
+    left in that directory by an earlier run whose name contains a digit is therefore applied as a
+    warp field. The antsAtroposN4 output "tissue_seg_Segmentation0N4.nii.gz" is such a file, which
+    silently turns the warped probability maps into near-empty ones.
+    """
+    tissue_seg_dir = TISSUE_SEG_BASE_SCHEMA.format(base_dir=outdir)
+    if tissue_seg_dir.exists():
+        shutil.rmtree(tissue_seg_dir)
 
 
 def tissueseg_done(outdir: Path) -> bool:
@@ -535,37 +562,149 @@ def warp_tissue_seg_to_preop(
         logger.info(f"Warped {tissue} probability map to {warped_file}.")
 
 
-def recompute_and_warp_tissue_seg_patient(
-    patient_outdir: Path, atlas: str, warp_only: bool = False
+def run_atropos_tissue_seg(exam_outdir: Path) -> None:
+    """
+    Runs the antsAtroposN4 tissue segmentation of an exam and stores it under
+    ATROPOS_TISSUE_SEG_FOLDER instead of the standard tissue segmentation directory.
+
+    run_tissue_seg always writes to the directory its constants schemas derive from outdir, so the
+    segmentation is run on a scratch directory that mirrors the exam and its output is moved into
+    place afterwards. antsAtroposN4 only reads the skull-stripped t1 and the brain mask, so linking
+    the skull stripping directory is enough to mirror the exam. This leaves the atlas registration
+    segmentation of the exam untouched. The step config that run_tissue_seg writes alongside the
+    segmentation stays in the scratch directory, since the exam config describes the atlas
+    registration segmentation that remains in place.
+    """
+    target_dir = exam_outdir / ATROPOS_TISSUE_SEG_FOLDER
+    if target_dir.exists():
+        shutil.rmtree(target_dir)
+
+    with tempfile.TemporaryDirectory() as scratch:
+        scratch_outdir = Path(scratch) / exam_outdir.name
+        scratch_outdir.mkdir(parents=True)
+        stripped_dir = MODALITY_STRIPPED_SCHEMA.format(
+            base_dir=exam_outdir, modality="t1"
+        ).parent
+        (scratch_outdir / stripped_dir.name).symlink_to(stripped_dir)
+
+        run_tissue_seg(
+            t1_file=MODALITY_STRIPPED_SCHEMA.format(
+                base_dir=scratch_outdir, modality="t1"
+            ),
+            outdir=scratch_outdir,
+            algorithm="antsAtroposN4",
+        )
+        shutil.move(
+            str(TISSUE_SEG_BASE_SCHEMA.format(base_dir=scratch_outdir)), str(target_dir)
+        )
+
+    logger.info(f"Atropos tissue segmentation saved to {target_dir}.")
+
+
+def warp_atropos_tissue_seg_to_preop(
+    preop_outdir: Path, exam_outdir: Path, override: bool = False
 ) -> None:
     """
-    Recomputes the tissue segmentation of the already preprocessed healthy exam of a single
-    patient with antsAtroposN4 and warps the resulting probability maps into pre-operative space.
-    Used to run this step separately from preprocessing, i.e. with -stage warp_tissue, so that the
-    healthy tissue maps can be regenerated after a change to the segmentation without redoing any
-    of the preprocessing. Both steps always overwrite their previous output, since the point of
-    the stage is to replace it; pass warp_only to reuse the existing maps and only redo the
-    warping. The exam roles are taken from the session_roles.json written during preprocessing.
+    Warps the antsAtroposN4 probability maps of an exam into pre-operative space, reading them from
+    ATROPOS_TISSUE_SEG_FOLDER and writing them to ATROPOS_LONGITUDINAL_FOLDER. Identical to
+    warp_tissue_seg_to_preop apart from those two directories, and in particular it reuses the very
+    same longitudinal transform, so both variants are warped exactly alike.
+    """
+    transform_file = LONGITUDINAL_AFFINE_SCHEMA.format(base_dir=exam_outdir)
+    if not transform_file.exists():
+        logger.warning(
+            f"{exam_outdir}: no longitudinal transform ({transform_file}), "
+            "cannot warp atropos tissue segmentation into preop space."
+        )
+        return
+
+    t1c_pre_img = ants.image_read(
+        str(MODALITY_STRIPPED_SCHEMA.format(base_dir=preop_outdir, modality="t1c"))
+    )
+    for tissue in TISSUE_LABELS:
+        # Only the directories differ from the atlas registration variant, so the file names are
+        # taken from the standard schemas rather than spelled out again.
+        pbmap_file = (
+            exam_outdir
+            / ATROPOS_TISSUE_SEG_FOLDER
+            / TISSUE_PBMAP_SCHEMA.format(base_dir=exam_outdir, tissue=tissue).name
+        )
+        if not pbmap_file.exists():
+            logger.warning(
+                f"{exam_outdir}: no atropos {tissue} probability map to warp into preop space."
+            )
+            continue
+
+        warped_file = (
+            exam_outdir
+            / ATROPOS_LONGITUDINAL_FOLDER
+            / LONGITUDINAL_WARP_SCHEMA.format(
+                base_dir=exam_outdir, modality=f"{tissue}_pbmap"
+            ).name
+        )
+        if warped_file.exists() and not override:
+            logger.info(
+                f"{exam_outdir}: atropos {tissue} probability map already warped to preop, "
+                "skipping."
+            )
+            continue
+
+        pbmap_warped = ants.apply_transforms(
+            fixed=t1c_pre_img,
+            moving=ants.image_read(str(pbmap_file)),
+            transformlist=[str(transform_file)],
+            interpolator="linear",
+        )
+        warped_file.parent.mkdir(parents=True, exist_ok=True)
+        ants.image_write(pbmap_warped, str(warped_file))
+        logger.info(f"Warped atropos {tissue} probability map to {warped_file}.")
+
+
+def resolve_healthy_and_preop(patient_outdir: Path) -> Optional[Tuple[Path, List[Path]]]:
+    """
+    Returns the pre-operative exam directory of a patient together with its healthy exam
+    directories, taken from the session_roles.json written during preprocessing. Returns None if
+    the patient was not preprocessed or has no pre-operative exam recorded.
     """
     roles_file = patient_outdir / "session_roles.json"
     if not roles_file.exists():
         logger.warning(
             f"{patient_outdir}: no {roles_file.name}, patient not preprocessed, skipping patient."
         )
-        return
+        return None
     with roles_file.open("r") as f:
         session_roles = json.load(f)
 
     preop_sessions = [name for name, role in session_roles.items() if role == "preop"]
     if not preop_sessions:
         logger.warning(f"{patient_outdir}: no preop exam recorded, skipping patient.")
-        return
-    preop_outdir = patient_outdir / preop_sessions[0]
+        return None
 
-    for session_name in [
-        name for name, role in session_roles.items() if role == "healthy"
-    ]:
-        healthy_outdir = patient_outdir / session_name
+    healthy_outdirs = [
+        patient_outdir / name
+        for name, role in session_roles.items()
+        if role == "healthy"
+    ]
+    return patient_outdir / preop_sessions[0], healthy_outdirs
+
+
+def recompute_and_warp_atropos_tissue_seg_patient(
+    patient_outdir: Path, warp_only: bool = False
+) -> None:
+    """
+    Runs the antsAtroposN4 tissue segmentation on the already preprocessed healthy exams of a
+    single patient and warps the resulting probability maps into pre-operative space, storing both
+    beside the atlas registration results rather than replacing them. Used with
+    -stage warp_tissue_atropos. Both steps always overwrite their previous output, since the point
+    of the stage is to replace it; pass warp_only to reuse the existing maps and only redo the
+    warping.
+    """
+    resolved = resolve_healthy_and_preop(patient_outdir)
+    if resolved is None:
+        return
+    preop_outdir, healthy_outdirs = resolved
+
+    for healthy_outdir in healthy_outdirs:
         t1_stripped_file = MODALITY_STRIPPED_SCHEMA.format(
             base_dir=healthy_outdir, modality="t1"
         )
@@ -578,13 +717,63 @@ def recompute_and_warp_tissue_seg_patient(
 
         if not warp_only:
             try:
-                # Same call as in process_healthy_exam: the atlas tissue probability maps serve as
-                # spatial priors without being registered, so the atlas has to match the space the
-                # exam was registered into.
+                run_atropos_tissue_seg(healthy_outdir)
+            except Exception:
+                logger.exception(
+                    f"{healthy_outdir}: atropos tissue segmentation failed, skipping exam."
+                )
+                continue
+
+        try:
+            # The maps just changed, so their warped copies are always rewritten.
+            warp_atropos_tissue_seg_to_preop(
+                preop_outdir=preop_outdir,
+                exam_outdir=healthy_outdir,
+                override=True,
+            )
+        except Exception:
+            logger.exception(
+                f"{healthy_outdir}: warping atropos tissue segmentation to preop failed, skipping."
+            )
+
+
+def recompute_and_warp_tissue_seg_patient(
+    patient_outdir: Path, atlas: str, warp_only: bool = False
+) -> None:
+    """
+    Recomputes the tissue segmentation of the already preprocessed healthy exam of a single
+    patient via atlas registration and warps the resulting probability maps into pre-operative space.
+    Used to run this step separately from preprocessing, i.e. with -stage warp_tissue, so that the
+    healthy tissue maps can be regenerated after a change to the segmentation without redoing any
+    of the preprocessing. Both steps always overwrite their previous output, since the point of
+    the stage is to replace it; pass warp_only to reuse the existing maps and only redo the
+    warping. The exam roles are taken from the session_roles.json written during preprocessing.
+    """
+    resolved = resolve_healthy_and_preop(patient_outdir)
+    if resolved is None:
+        return
+    preop_outdir, healthy_outdirs = resolved
+
+    for healthy_outdir in healthy_outdirs:
+        t1_stripped_file = MODALITY_STRIPPED_SCHEMA.format(
+            base_dir=healthy_outdir, modality="t1"
+        )
+        if not t1_stripped_file.exists():
+            logger.warning(
+                f"{healthy_outdir}: no skull-stripped t1 ({t1_stripped_file}), "
+                "healthy exam not preprocessed, skipping exam."
+            )
+            continue
+
+        if not warp_only:
+            try:
+                # Same call as in process_healthy_exam: no registration mask, since the healthy
+                # exam has no tumor to exclude from the registration metric.
+                clear_tissue_seg(healthy_outdir)
                 run_tissue_seg(
                     t1_file=t1_stripped_file,
                     outdir=healthy_outdir,
-                    algorithm="antsAtroposN4",
+                    algorithm="atlas_registration",
                     atlas=atlas,
                 )
             except Exception:
@@ -613,57 +802,31 @@ def predict_patient(
     override: bool = False,
 ) -> None:
     """
-    Runs the growth prediction on the already preprocessed exams of a single patient and warps the
-    follow-up predictions into pre-operative space. Used to run the prediction as a separate pass
-    after preprocessing, i.e. with -stage preprocess followed by -stage predict. The exam roles are
-    taken from the session_roles.json written during preprocessing.
+    Runs the growth prediction on the already preprocessed pre-operative exam of a single patient.
+    Used to run the prediction as a separate pass after preprocessing, i.e. with -stage preprocess
+    followed by -stage predict. The exam roles are taken from the session_roles.json written during
+    preprocessing. Follow-ups are not predicted on, so nothing has to be warped into pre-operative
+    space here.
     """
-    roles_file = patient_outdir / "session_roles.json"
-    if not roles_file.exists():
+    resolved = resolve_healthy_and_preop(patient_outdir)
+    if resolved is None:
+        return
+    preop_outdir, _ = resolved
+
+    if not TUMORSEG_SCHEMA.format(base_dir=preop_outdir).exists() or not tissueseg_done(
+        preop_outdir
+    ):
         logger.warning(
-            f"{patient_outdir}: no {roles_file.name}, patient not preprocessed, skipping patient."
+            f"{preop_outdir}: tumor or tissue segmentation missing, skipping prediction."
         )
         return
-    with roles_file.open("r") as f:
-        session_roles = json.load(f)
 
-    preop_sessions = [name for name, role in session_roles.items() if role == "preop"]
-    if not preop_sessions:
-        logger.warning(f"{patient_outdir}: no preop exam recorded, skipping patient.")
-        return
-    preop_outdir = patient_outdir / preop_sessions[0]
-    followup_sessions = [
-        name for name, role in session_roles.items() if role == "followup"
-    ]
-
-    for session_name in preop_sessions + followup_sessions:
-        exam_outdir = patient_outdir / session_name
-        if not TUMORSEG_SCHEMA.format(base_dir=exam_outdir).exists() or not tissueseg_done(
-            exam_outdir
-        ):
-            logger.warning(
-                f"{exam_outdir}: tumor or tissue segmentation missing, skipping prediction."
-            )
-            continue
-        predict_growth(
-            outdir=exam_outdir,
-            growth_model_paths=growth_model_paths,
-            cuda_device=cuda_device,
-            override=override,
-        )
-
-    for session_name in followup_sessions:
-        try:
-            warp_predictions_to_preop(
-                preop_outdir=preop_outdir,
-                followup_outdir=patient_outdir / session_name,
-                model_ids=list(growth_model_paths),
-                override=override,
-            )
-        except Exception:
-            logger.exception(
-                f"{patient_outdir}/{session_name}: warping predictions to preop failed, skipping."
-            )
+    predict_growth(
+        outdir=preop_outdir,
+        growth_model_paths=growth_model_paths,
+        cuda_device=cuda_device,
+        override=override,
+    )
 
 
 def process_patient(
@@ -855,21 +1018,25 @@ if __name__ == "__main__":
         "-stage",
         type=str,
         default="all",
-        choices=("all", "preprocess", "predict", "warp_tissue"),
+        choices=("all", "preprocess", "predict", "warp_tissue", "warp_tissue_atropos"),
         help=(
             "Which steps to run. 'preprocess' stops after the longitudinal registration and runs "
-            "no growth model, 'predict' only runs the growth models on already preprocessed exams "
-            "and warps the follow-up predictions into preop space, 'warp_tissue' recomputes the "
+            "no growth model, 'predict' only runs the growth models on the already preprocessed "
+            "preop exam, 'warp_tissue' recomputes the "
             "tissue segmentation of already preprocessed healthy exams and warps it into preop "
-            "space, 'all' runs the full pipeline in one go."
+            "space, 'warp_tissue_atropos' does the same with antsAtroposN4 instead of atlas "
+            f"registration and stores its output in '{ATROPOS_TISSUE_SEG_FOLDER}' and "
+            f"'{ATROPOS_LONGITUDINAL_FOLDER}', beside the atlas registration one rather than "
+            "replacing it, 'all' runs the full pipeline in one go."
         ),
     )
     parser.add_argument(
         "-warp_only",
         action="store_true",
         help=(
-            "Only used with -stage warp_tissue: skip the tissue segmentation and only warp the "
-            "existing probability maps of the healthy exams into preop space."
+            "Only used with -stage warp_tissue and -stage warp_tissue_atropos: skip the tissue "
+            "segmentation and only warp the existing probability maps of the healthy exams into "
+            "preop space."
         ),
     )
     parser.add_argument(
@@ -902,7 +1069,9 @@ if __name__ == "__main__":
     # The prediction and tissue warping stages run on preprocessed output only, so their patients
     # come from outdir rather than from the original data.
     source_dir = (
-        outdir_root if args.stage in ("predict", "warp_tissue") else datadir
+        outdir_root
+        if args.stage in ("predict", "warp_tissue", "warp_tissue_atropos")
+        else datadir
     )
     patient_dirs = sorted(p for p in source_dir.iterdir() if p.is_dir())
     if args.patients:
@@ -921,6 +1090,11 @@ if __name__ == "__main__":
                 recompute_and_warp_tissue_seg_patient(
                     patient_outdir=patient_dir,
                     atlas=args.atlas,
+                    warp_only=args.warp_only,
+                )
+            elif args.stage == "warp_tissue_atropos":
+                recompute_and_warp_atropos_tissue_seg_patient(
+                    patient_outdir=patient_dir,
                     warp_only=args.warp_only,
                 )
             elif args.stage == "predict":
