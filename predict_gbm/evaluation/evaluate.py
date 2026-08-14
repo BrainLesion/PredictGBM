@@ -5,7 +5,7 @@ from pathlib import Path
 from loguru import logger
 from typing import Any, Dict, Tuple
 from scipy.ndimage import binary_fill_holes, distance_transform_edt
-from predict_gbm.base import BasePipe
+from predict_gbm.pipeline import BasePipe
 from predict_gbm.evaluation.metrics import recurrence_coverage
 from predict_gbm.utils.utils import (
     load_mri_data,

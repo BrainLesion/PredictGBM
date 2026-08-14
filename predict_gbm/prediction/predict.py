@@ -4,7 +4,7 @@ from pathlib import Path
 from loguru import logger
 from typing import Optional
 from scipy.ndimage import binary_fill_holes
-from predict_gbm.base import BasePipe
+from predict_gbm.pipeline import BasePipe
 from predict_gbm.prediction.growth_model import TumorGrowthModel
 from predict_gbm.utils.constants import (
     BRAIN_MASK_SCHEMA,
