@@ -2,16 +2,49 @@ import os
 import time
 from pathlib import Path
 from loguru import logger
-from typing import Dict, List, Optional
-from predict_gbm.prediction.predict import PredictTumorGrowthPipe
-from predict_gbm.evaluation.evaluate import EvaluateTumorModelPipe
-from predict_gbm.utils.visualization import VisualizationPipe
-from predict_gbm.utils.constants import (
+from typing import Any, Dict, List, Optional
+
+
+class BasePipe:
+    """
+    Abstract base class for pipeline components.
+
+    Parameters:
+        preop_dir (Path): Path to the output directory containing the pre-operative pipeline outputs.
+        followup_dir (optional, Path): Path to the output directory containing the follow-up pipeline outputs.
+        cuda_device (optional, str): The gpu device to use.
+    """
+
+    def __init__(
+        self,
+        preop_dir,
+        followup_dir: Optional[Path] = None,
+        cuda_device: Optional[str] = "0",
+    ) -> None:
+        self.preop_dir = preop_dir
+        self.followup_dir = followup_dir
+        self.cuda_device = cuda_device
+
+    def run(self) -> Any:  # pragma: no cover - interface only
+        """Execute the pipe component."""
+        raise NotImplementedError
+
+    def __call__(self) -> Any:
+        """Allow calling the instance directly to execute :meth:`run`."""
+        return self.run()
+
+
+# These imports must come after BasePipe: the imported modules import BasePipe
+# from this module, so it has to be defined before they are loaded.
+from predict_gbm.prediction.predict import PredictTumorGrowthPipe  # noqa: E402
+from predict_gbm.evaluation.evaluate import EvaluateTumorModelPipe  # noqa: E402
+from predict_gbm.utils.visualization import VisualizationPipe  # noqa: E402
+from predict_gbm.utils.constants import (  # noqa: E402
     MODALITY_STRIPPED_SCHEMA,
     PATIENT_PREOP_OUTPUT_SCHEMA,
     PATIENT_FOLLOWUP_OUTPUT_SCHEMA,
 )
-from predict_gbm.preprocessing.preprocess import (
+from predict_gbm.preprocessing.preprocess import (  # noqa: E402
     DicomPreprocessor,
     NiftiPreprocessor,
     RegisterRecurrencePipe,

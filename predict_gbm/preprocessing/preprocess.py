@@ -5,7 +5,7 @@ import shutil
 from pathlib import Path
 from loguru import logger
 from typing import Dict, List, Optional
-from predict_gbm.base import BasePipe
+from predict_gbm.pipeline import BasePipe
 from predict_gbm.preprocessing.conversion import dicom_to_nifti
 from predict_gbm.preprocessing.tumor_segmentation import run_brats
 from predict_gbm.preprocessing.norm_ss_coregistration import (

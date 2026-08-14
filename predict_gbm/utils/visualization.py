@@ -4,7 +4,7 @@ import matplotlib.colors as mcolors
 import matplotlib.patches as mpatches
 from pathlib import Path
 from typing import Dict, List, Tuple
-from predict_gbm.base import BasePipe
+from predict_gbm.pipeline import BasePipe
 from predict_gbm.preprocessing.tissue_segmentation import derive_tissue_labelmap
 from predict_gbm.utils.utils import (
     compute_center_of_mass,
