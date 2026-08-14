@@ -156,7 +156,8 @@ def run_tissue_seg(
             Only used when algorithm is "atlas_registration".
         algorithm (str): Tissue segmentation algorithm to use. Supports "atlas_registration", "antsAtroposN4"
         atlas (str): Atlas whose skull-stripped T1 template and tissue probability maps are used.
-            One of "brats_mni152" (default), "mni152", or "sri24".
+            One of "brats_mni152" (default), "mni152", or "sri24". Only used when algorithm is
+            "atlas_registration".
 
     Returns:
         None
@@ -174,7 +175,7 @@ def run_tissue_seg(
             atlas=atlas,
         )
     elif algorithm == "antsAtroposN4":
-        run_tissue_seg_atropos_n4(t1_file=t1_file, outdir=outdir, atlas=atlas)
+        run_tissue_seg_atropos_n4(t1_file=t1_file, outdir=outdir)
     else:
         raise ValueError(
             f"Unknown algorithm {algorithm!r}. Expected 'atlas_registration' or 'antsAtroposN4'."
@@ -266,19 +267,17 @@ def run_tissue_seg_atlas_registration(
     )
 
 
-def run_tissue_seg_atropos_n4(
-    t1_file: Path, outdir: Path, atlas: str = "brats_mni152"
-) -> None:
+def run_tissue_seg_atropos_n4(t1_file: Path, outdir: Path) -> None:
     """
-    Performs tissue segmentation for gm, wm, csf by running the antsAtroposN4.sh binary with the
-    atlas tissue probability maps as spatial priors and the brain mask as constraint. Produces one
-    probability map per tissue.
+    Performs tissue segmentation for gm, wm, csf by running the antsAtroposN4.sh binary without
+    spatial priors and with the brain mask as constraint. Produces one probability map per tissue.
+
+    Without priors antsAtroposN4.sh initializes with k-means, which orders the classes by
+    increasing intensity. On a skull-stripped T1 this matches TISSUE_LABELS (csf=1, gm=2, wm=3).
 
     Parameters:
         t1_file (Path): Path to the t1 nifti.
         outdir (Path): Path to output directory. Usually exam directory.
-        atlas (str): Atlas whose tissue probability maps are used as spatial priors. One of
-            "brats_mni152" (default), "mni152", or "sri24".
 
     Returns:
         None
@@ -291,17 +290,6 @@ def run_tissue_seg_atropos_n4(
 
     brain_mask_file = BRAIN_MASK_SCHEMA.format(base_dir=outdir)
 
-    # antsAtroposN4.sh expects priors as a %d-indexed filename pattern, with the index matching
-    # the label of the corresponding class in the output segmentation. Stage the atlas tissue
-    # probability maps under those names, in TISSUE_LABELS order (csf=1, gm=2, wm=3).
-    priors_dir = outprefix / "priors"
-    priors_dir.mkdir(parents=True, exist_ok=True)
-    for tissue, label in TISSUE_LABELS.items():
-        shutil.copyfile(
-            str(ATLAS_TISSUE_PBMAP_SCHEMA.format(atlas=atlas, tissue=tissue)),
-            str(priors_dir / f"prior{int(label)}.nii.gz"),
-        )
-
     seg_prefix = outprefix / "tissue_seg_"
     cmd = [
         "antsAtroposN4.sh",
@@ -309,8 +297,6 @@ def run_tissue_seg_atropos_n4(
         "-a", str(t1_file),
         "-x", str(brain_mask_file),
         "-c", "3",
-        "-p", str(priors_dir / "prior%d.nii.gz"),
-        "-w", "0.25",
         "-y", "2",
         "-y", "3",
         "-o", str(seg_prefix),

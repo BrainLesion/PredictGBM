@@ -105,17 +105,13 @@ class TestTissueSegmentation(unittest.TestCase):
 
         outdir = self.tmp / "out"
 
-        for tissue in ["csf", "gm", "wm"]:
-            pbmap_path = self.tmp / f"{tissue}_pbmap.nii.gz"
-            nib.save(
-                nib.Nifti1Image(np.full((2, 2, 2), 0.5, dtype=np.float32), np.eye(4)),
-                pbmap_path,
-            )
-
         brain_mask_file = self.tmp / "brain_mask.nii.gz"
         nib.save(nib.Nifti1Image(np.ones((2, 2, 2)), np.eye(4)), brain_mask_file)
 
+        recorded_cmds = []
+
         def fake_run(cmd, check=False):
+            recorded_cmds.append(cmd)
             seg_prefix = Path(cmd[cmd.index("-o") + 1])
             seg = np.zeros((2, 2, 2), dtype=np.int32)
             seg[0, 0, 0] = 1
@@ -135,13 +131,16 @@ class TestTissueSegmentation(unittest.TestCase):
             return SimpleNamespace(returncode=0)
 
         with patch.object(
-            ts, "ATLAS_TISSUE_PBMAP_SCHEMA", PathSchema(self.tmp / "{tissue}_pbmap.nii.gz")
-        ), patch.object(
             ts, "BRAIN_MASK_SCHEMA", PathSchema(str(brain_mask_file))
         ), patch.object(
             ts.subprocess, "run", side_effect=fake_run
         ):
             ts.run_tissue_seg_atropos_n4(t1_file, outdir)
+
+        # No spatial priors: atropos initializes with k-means
+        self.assertEqual(len(recorded_cmds), 1)
+        self.assertNotIn("-p", recorded_cmds[0])
+        self.assertNotIn("-w", recorded_cmds[0])
 
         gm_pbmap = TISSUE_PBMAP_SCHEMA.format(base_dir=outdir, tissue="gm")
 
