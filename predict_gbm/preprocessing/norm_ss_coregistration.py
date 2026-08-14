@@ -13,7 +13,7 @@ from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtract
 from brainles_preprocessing.normalization.percentile_normalizer import (
     PercentileNormalizer,
 )
-from predict_gbm.preprocessing.longitudinal_dirac import (
+from predict_gbm.preprocessing.dirac import (
     apply_longitudinal_warp,
     resolve_dirac_disp_field,
     optimize_warp_field,
