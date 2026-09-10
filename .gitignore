@@ -4,6 +4,7 @@ predict_gbm/data/models/*
 test_cases/
 tmp/
 *.out
+logs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

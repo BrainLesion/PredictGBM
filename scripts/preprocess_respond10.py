@@ -131,7 +131,8 @@ def register_to_preop(exam_dir: Path, preop_dir: Path) -> None:
 if __name__ == "__main__":
     # Example:
     # nohup python -u scripts/preprocess_respond10.py -cuda_device 0 > preprocess_respond10.out 2>&1 &
-    # Add -preop to also segment the preop exams and regenerate their standard plans.
+    # Add -preop to also segment the preop exams and regenerate their standard plans,
+    # or -preop_only to run just that step.
     parser = argparse.ArgumentParser()
     parser.add_argument("-cuda_device", type=str, default="0", help="GPU id to run on.")
     parser.add_argument(
@@ -146,6 +147,11 @@ if __name__ == "__main__":
         help="Also perform tumor segmentation and regenerate the standard plan for the preop exams (no registration).",
     )
     parser.add_argument(
+        "-preop_only",
+        action="store_true",
+        help="Only run the preop step (implies -preop); skip postop/followup segmentation and registration.",
+    )
+    parser.add_argument(
         "-patients",
         type=str,
         nargs="+",
@@ -153,6 +159,8 @@ if __name__ == "__main__":
         help="Optional list of patient ids to process (e.g. respond_tum_001). Default: all.",
     )
     args = parser.parse_args()
+    if args.preop_only:
+        args.preop = True
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.cuda_device
 
@@ -182,6 +190,8 @@ if __name__ == "__main__":
                 )
 
         for timepoint in ("postop", "followup"):
+            if args.preop_only:
+                break
             exam_dir = exam_dirs[timepoint]
             logger.info(f"{patient_id}/{exam_dir.name}: starting tumor segmentation.")
             try:
