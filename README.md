@@ -102,7 +102,6 @@ ENTRYPOINT ["python3", "inference.py"]
 
 ## Citation
 
- [!IMPORTANT]
 > If you use PREDICT-GBM in your research, please cite it to support the development!
 
 Zimmer, L., Weidner, J., Balcerak, M., Kofler, F., Krupa, M., Ezhov, I., Cepeda, S., Zhang, R. Z., Lowengrub, J. S., Menze, B., & Wiestler, B. (2026). PREDICT-GBM: A multicenter platform advancing personalized glioblastoma radiotherapy planning. *npj Digital Medicine*, 9, 686. [https://doi.org/10.1038/s41746-026-03194-0](https://doi.org/10.1038/s41746-026-03194-0)
