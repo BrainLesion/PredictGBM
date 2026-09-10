@@ -102,10 +102,24 @@ ENTRYPOINT ["python3", "inference.py"]
 
 ## Citation
 
-If you use PredictGBM in your research, please cite it to support the development!
+ [!IMPORTANT]
+> If you use PREDICT-GBM in your research, please cite it to support the development!
+
+Zimmer, L., Weidner, J., Balcerak, M., Kofler, F., Krupa, M., Ezhov, I., Cepeda, S., Zhang, R. Z., Lowengrub, J. S., Menze, B., & Wiestler, B. (2026). PREDICT-GBM: A multicenter platform advancing personalized glioblastoma radiotherapy planning. *npj Digital Medicine*, 9, 686. [https://doi.org/10.1038/s41746-026-03194-0](https://doi.org/10.1038/s41746-026-03194-0)
 
 ```
-TODO: citation will be added asap
+@article{zimmer2026predictgbm,
+      title={PREDICT-GBM: A multicenter platform advancing personalized glioblastoma radiotherapy planning},
+      author={Lucas Zimmer and Jonas Weidner and Michal Balcerak and Florian Kofler and Mara Krupa and Ivan Ezhov and Santiago Cepeda and Ray Zirui Zhang and John S. Lowengrub and Bjoern Menze and Benedikt Wiestler},
+      journal={npj Digital Medicine},
+      volume={9},
+      number={1},
+      pages={686},
+      year={2026},
+      publisher={Nature Publishing Group},
+      doi={10.1038/s41746-026-03194-0},
+      url={https://www.nature.com/articles/s41746-026-03194-0},
+}
 ```
 
 ## Acknowledgements
