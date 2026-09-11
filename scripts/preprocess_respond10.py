@@ -282,7 +282,8 @@ if __name__ == "__main__":
     # nohup python -u scripts/preprocess_respond10.py -cuda_device 0 > preprocess_respond10.out 2>&1 &
     # Without -preop the postop and followup exams are segmented and registered to preop,
     # with -preop only the preop exams are processed (segmentation, standard plan, growth
-    # model predictions and their plans).
+    # model predictions and their plans). With -gliodil_plans only the gliodil plans are
+    # regenerated from the existing gliodil predictions (nothing else is run).
     parser = argparse.ArgumentParser()
     parser.add_argument("-cuda_device", type=str, default="0", help="GPU id to run on.")
     parser.add_argument(
@@ -298,6 +299,15 @@ if __name__ == "__main__":
             "Only process the preop exams: tumor segmentation, standard plan and growth model "
             "prediction with the corresponding plan (no registration). The postop and followup "
             "exams are skipped."
+        ),
+    )
+    parser.add_argument(
+        "-gliodil_plans",
+        action="store_true",
+        help=(
+            "Only regenerate the gliodil radiotherapy plans of the preop exams from the "
+            "existing growth_models/gliodil_pred.nii.gz predictions, overwriting the old "
+            "plans. No segmentation, prediction or registration is run."
         ),
     )
     parser.add_argument(
@@ -343,6 +353,17 @@ if __name__ == "__main__":
             continue
 
         preop_dir = exam_dirs["preop"]
+        if args.gliodil_plans:
+            pred_file = FLAT_PREDICTION_SCHEMA.format(base_dir=preop_dir, algo_id="gliodil")
+            if not pred_file.exists():
+                logger.error(f"{patient_id}/{preop_dir.name}: {pred_file} not found, skipping.")
+                continue
+            try:
+                create_model_plan(preop_dir, "gliodil")
+            except Exception:
+                logger.exception(f"{patient_id}/{preop_dir.name}: gliodil plan failed, skipping.")
+            continue
+
         if args.preop:
             logger.info(f"{patient_id}/{preop_dir.name}: starting tumor segmentation.")
             try:
