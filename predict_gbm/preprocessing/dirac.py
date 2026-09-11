@@ -1690,7 +1690,7 @@ def dirac_instance_optimization(
     lambdas_inv: tuple[float, ...] = (1.0, 2.0, 4.0, 8.0, 10.0),
     lrs: tuple[float, ...] = (1e-2, 5e-3, 5e-3, 3e-3, 3e-3),
     iters: tuple[int, ...] = (150, 100, 100, 100, 50),
-    regularize: Literal["total", "residual"] = "total",
+    regularize: Literal["total", "residual"] = "residual",
     multi_scale_ncc: bool = False,
     ncc_win: int = 3,
     coarsest_size: int = 80,
@@ -1699,7 +1699,7 @@ def dirac_instance_optimization(
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Instance optimization of the DIRAC displacement fields (Mok & Chung, Table 1).
 
-    The output field is `u = u_net + upsample(c)`: the network field `u_net` stays
+    The output field is `u = u_dirac + upsample(c)`: the network field `u_dirac` stays
     frozen at native resolution and a residual control grid `c` (zero-initialized, in
     normalized per-axis coordinates so Table 1's Adam learning rates apply) is optimized
     over a coarse-to-fine pyramid. Levels are built with an anti-aliased resize
@@ -1707,13 +1707,24 @@ def dirac_instance_optimization(
     axis to native resolution with geometric spacing; control grids go linearly from
     grid_range[0]^3 to grid_range[1]^3. Loss per level, with Mok's normalization of each
     term: (1 - lam_reg) * l_s + lam_reg * l_r + lam_inv * l_inv (see instopt_terms).
-    `regularize` selects whether l_r acts on the total field or on the residual only.
+    `regularize` selects what the smoothness term l_r acts on: "total" = the full field
+    u_dirac + upsample(c) (Mok's convention, smooths the network field as well);
+    "residual" = the correction upsample(c) only (pipeline default: keeps the correction
+    inside the occlusion mask bounded and leaves the network field's detail intact).
+    `multi_scale_ncc` replaces the single-window NCC (win=`ncc_win`) by Mok's
+    multi-resolution NCC (windows 7/5/3); default off.
 
     B, Fup: preop and followup images (1,1,D,H,W). disp_*_init: voxel displacement
     fields (1,3,D,H,W) with channels [dx->W, dy->H, dz->D]. m_*_fixed: occlusion masks
     in preop / followup space. If `stats` is given, per-level diagnostics (term values
     and gradient norms at iteration 0, field magnitude before/after) are stored in it.
     Returns (disp_fb, disp_bf, m_fb, m_bf) at native resolution.
+
+    GPU runs are not bitwise reproducible (the grid_sample backward uses atomic adds);
+    on 240x240x155 cases two runs differ by about 0.03-0.07 voxels on average and up
+    to about 2 voxels at isolated voxel clusters in the brain outside the occlusion
+    mask (below 0.8 voxels inside it), so similarity and fold statistics are stable
+    to three decimals while |u| statistics are not. CPU runs are deterministic.
     """
     if m_fb_fixed is None:
         m_fb_fixed = torch.zeros_like(B)
@@ -1735,13 +1746,13 @@ def dirac_instance_optimization(
         level_sizes.append(tuple(max(2, int(round(n * s))) for n in native))  # type: ignore[arg-type]
         grid_sizes.append(int(round(grid_range[0] + (grid_range[1] - grid_range[0]) * t)))
 
-    u_net_fb, u_net_bf = disp_fb_init.detach(), disp_bf_init.detach()
+    u_dirac_fb, u_dirac_bf = disp_fb_init.detach(), disp_bf_init.detach()
     g0 = grid_sizes[0]
     c_fb = torch.zeros((1, 3, g0, g0, g0), device=B.device, dtype=B.dtype)
     c_bf = torch.zeros_like(c_fb)
 
-    def total_native(c: torch.Tensor, u_net: torch.Tensor) -> torch.Tensor:
-        return u_net + _control_grid_to_voxel_disp(c, native)
+    def total_native(c: torch.Tensor, u_dirac: torch.Tensor) -> torch.Tensor:
+        return u_dirac + _control_grid_to_voxel_disp(c, native)
 
     level_stats: list[dict[str, Any]] = []
     for lvl, (lr, n_iter, lam_reg, lam_inv, size, g) in enumerate(
@@ -1756,9 +1767,9 @@ def dirac_instance_optimization(
             B_l, F_l = resample_antialiased(B, size), resample_antialiased(Fup, size)
             m_fb_l = resample_antialiased(m_fb_fixed, size).clamp(0.0, 1.0)
             m_bf_l = resample_antialiased(m_bf_fixed, size).clamp(0.0, 1.0)
-            u_net_fb_l = resize_disp_voxel_antialiased(u_net_fb, size)
-            u_net_bf_l = resize_disp_voxel_antialiased(u_net_bf, size)
-            mag_before = _field_magnitude_stats(total_native(c_fb, u_net_fb))
+            u_dirac_fb_l = resize_disp_voxel_antialiased(u_dirac_fb, size)
+            u_dirac_bf_l = resize_disp_voxel_antialiased(u_dirac_bf, size)
+            mag_before = _field_magnitude_stats(total_native(c_fb, u_dirac_fb))
         # Adam moves each control point by about lr per step; in native voxels that is
         # lr * (N - 1) / 2 per axis (x, y, z).
         step_vox = tuple(lr * (n - 1) / 2.0 for n in (native[2], native[1], native[0]))
@@ -1766,7 +1777,7 @@ def dirac_instance_optimization(
         def weighted_terms() -> dict[str, torch.Tensor]:
             r_fb = _control_grid_to_voxel_disp(c_fb, size)
             r_bf = _control_grid_to_voxel_disp(c_bf, size)
-            u_fb, u_bf = u_net_fb_l + r_fb, u_net_bf_l + r_bf
+            u_fb, u_bf = u_dirac_fb_l + r_fb, u_dirac_bf_l + r_bf
             reg_fb, reg_bf = (u_fb, u_bf) if regularize == "total" else (r_fb, r_bf)
             l_s, l_r, l_inv = instopt_terms(
                 B_l, F_l, m_fb_l, m_bf_l, u_fb, u_bf, reg_fb, reg_bf, ncc_win, multi_scale_ncc
@@ -1808,13 +1819,13 @@ def dirac_instance_optimization(
 
         c_fb, c_bf = c_fb.detach(), c_bf.detach()
         with torch.no_grad():
-            mag_after = _field_magnitude_stats(total_native(c_fb, u_net_fb))
+            mag_after = _field_magnitude_stats(total_native(c_fb, u_dirac_fb))
             residual_mean = float(_control_grid_to_voxel_disp(c_fb, native).norm(dim=1).mean())
         logger.info(
             f"IO level {lvl}: size {size}, grid {g}^3, {n_iter} iters, lr {lr:g} "
             f"(initial step ~ {step_vox[0]:.2f}/{step_vox[1]:.2f}/{step_vox[2]:.2f} voxels x/y/z), "
             f"|u| mean/p95/max {_format_stats(mag_before)} -> {_format_stats(mag_after)}, "
-            f"mean |u - u_net| {residual_mean:.3f}"
+            f"mean |u - u_dirac| {residual_mean:.3f}"
         )
         level_stats.append(
             {
@@ -1833,8 +1844,8 @@ def dirac_instance_optimization(
         )
 
     with torch.no_grad():
-        disp_fb = total_native(c_fb, u_net_fb)
-        disp_bf = total_native(c_bf, u_net_bf)
+        disp_fb = total_native(c_fb, u_dirac_fb)
+        disp_bf = total_native(c_bf, u_dirac_bf)
     if stats is not None:
         stats["levels"] = level_stats
         stats["regularize"] = regularize
