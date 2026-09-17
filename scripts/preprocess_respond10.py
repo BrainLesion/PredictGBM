@@ -24,6 +24,7 @@ from predict_gbm.utils.utils import (
     load_segmentation,
 )
 from predict_gbm.preprocessing import register_recurrence, run_brats
+from predict_gbm.preprocessing.tumor_segmentation import split_segmentation
 from predict_gbm.prediction import predict_tumor_growth
 from predict_gbm.evaluation.evaluate import (
     create_standard_plan,
@@ -45,6 +46,10 @@ BRAIN_MASK_BET_SCHEMA = PathSchema(
     "{base_dir}/" + SKULL_STRIP_FOLDER + "/brainmask.nii.gz"
 )
 EXAM_PREFIXES = ("preop", "postop", "followup")
+# A preop exam has no resection cavity, so label 4 in its BraTS segmentation is a
+# mislabeled part of the enhancing tumor and is replaced by CAVITY_RELABEL.
+CAVITY_LABEL = 4
+CAVITY_RELABEL = 3
 # CTV margin (mm) for the preop standard plan; matches predict_gbm.evaluation defaults.
 CTV_MARGIN = 15
 # Modalities (besides t1c) of the postop/followup exams that are warped into preop space.
@@ -104,6 +109,30 @@ def segment_tumor(exam_dir: Path, cuda_device: str) -> None:
     )
 
 
+def relabel_preop_cavity(preop_dir: Path) -> None:
+    """
+    Replaces CAVITY_LABEL by CAVITY_RELABEL in the tumor segmentation of a preop exam and
+    regenerates the derived core / edema masks. The segmentation written by the BraTS docker
+    is root owned, so it is replaced through a temporary file in the (writable) directory.
+    """
+    tumorseg_file = TUMORSEG_SCHEMA.format(base_dir=preop_dir)
+    img = nib.load(str(tumorseg_file))
+    seg = np.asanyarray(img.dataobj)
+    n_cavity = int(np.sum(seg == CAVITY_LABEL))
+    if n_cavity == 0:
+        return
+    seg = seg.copy()
+    seg[seg == CAVITY_LABEL] = CAVITY_RELABEL
+    tmp_file = tumorseg_file.with_name(tumorseg_file.name + ".tmp.nii.gz")
+    nib.save(nib.Nifti1Image(seg.astype(img.get_data_dtype()), img.affine, img.header), str(tmp_file))
+    os.replace(tmp_file, tumorseg_file)
+    split_segmentation(tumorseg_file, preop_dir)
+    logger.info(
+        f"{preop_dir}: relabeled {n_cavity} voxels of label {CAVITY_LABEL} to {CAVITY_RELABEL} "
+        f"in {tumorseg_file}."
+    )
+
+
 def load_brain_mask(exam_dir: Path) -> np.ndarray:
     """Loads the skull stripping brain mask of an exam and fills its holes."""
     brain_mask = load_segmentation(BRAIN_MASK_BET_SCHEMA.format(base_dir=exam_dir))
@@ -158,7 +187,11 @@ def create_model_plan(preop_dir: Path, model_id: str) -> None:
     predict_gbm.evaluation.evaluate_tumor_model: the prediction is resampled to the grid of
     the standard plan, binary predictions are turned into a distance fade, and the highest
     scoring voxels within the brain mask are selected until the volume of the standard plan
-    is reached.
+    is reached. Unlike evaluate_tumor_model the scores are not clipped to [0, 1] before the
+    selection: clipping saturates every voxel above 1 (e.g. the U-Net logits) to the same
+    value, and topk_plan then breaks the ties by memory order, truncating the plan along the
+    first axis. Clipping does not change the ranking otherwise, so the plans of predictions
+    within [0, 1] are unaffected.
     """
     pred_file = FLAT_PREDICTION_SCHEMA.format(base_dir=preop_dir, algo_id=model_id)
     standard_plan_file = STANDARD_PLAN_SCHEMA.format(base_dir=preop_dir)
@@ -175,7 +208,6 @@ def create_model_plan(preop_dir: Path, model_id: str) -> None:
             f"Prediction {pred_file} is binary. Generating distance fade for radiation planning."
         )
         model_prediction = generate_distance_fade_mask(model_prediction)
-    model_prediction = np.clip(model_prediction, 0.0, 1.0)
 
     model_plan = topk_plan(
         scores=model_prediction,
@@ -186,6 +218,44 @@ def create_model_plan(preop_dir: Path, model_id: str) -> None:
     outfile = FLAT_MODEL_PLAN_SCHEMA.format(base_dir=preop_dir, algo_id=model_id)
     nib.save(nib.Nifti1Image(model_plan, affine=affine), str(outfile))
     logger.info(f"{preop_dir}: saved {model_id} plan to {outfile}.")
+
+
+def fix_prediction_affine(preop_dir: Path, model_id: str) -> None:
+    """
+    Rewrites a growth model prediction whose affine differs from the tumor segmentation of
+    the preop exam (its input) with that affine, keeping the voxel data. The gliodil
+    predictions of respond10 were written with an identity affine, which places them 239 mm
+    off the exam in viewers although their voxel grid is the one of the segmentation. The
+    data is stored as float32, dropping the scaled integer encoding of these files.
+    """
+    pred_file = FLAT_PREDICTION_SCHEMA.format(base_dir=preop_dir, algo_id=model_id)
+    ref_img = nib.load(str(TUMORSEG_SCHEMA.format(base_dir=preop_dir)))
+    pred_img = nib.load(str(pred_file))
+    if pred_img.shape != ref_img.shape:
+        raise ValueError(
+            f"{pred_file}: shape {pred_img.shape} differs from the tumor segmentation "
+            f"{ref_img.shape}, cannot fix the affine."
+        )
+    if np.allclose(pred_img.affine, ref_img.affine):
+        return
+    data = np.asanyarray(pred_img.dataobj).astype(np.float32)
+    tmp_file = pred_file.with_name(pred_file.name + ".tmp.nii.gz")
+    nib.save(nib.Nifti1Image(data, ref_img.affine), str(tmp_file))
+    os.replace(tmp_file, pred_file)
+    logger.info(
+        f"{preop_dir}: replaced the affine of {pred_file} (translation "
+        f"{pred_img.affine[:3, 3]}) with the one of the tumor segmentation "
+        f"({ref_img.affine[:3, 3]})."
+    )
+
+
+def find_prediction_ids(preop_dir: Path) -> List[str]:
+    """Model ids of all growth model predictions (growth_models/<id>_pred.nii.gz) of a preop exam."""
+    pattern = FLAT_PREDICTION_SCHEMA.format(base_dir=preop_dir, algo_id="*").name
+    return sorted(
+        f.name[: -len("_pred.nii.gz")]
+        for f in (preop_dir / MODEL_OUTPUT_DIR).glob(pattern)
+    )
 
 
 def predict_growth(
@@ -282,8 +352,9 @@ if __name__ == "__main__":
     # nohup python -u scripts/preprocess_respond10.py -cuda_device 0 > preprocess_respond10.out 2>&1 &
     # Without -preop the postop and followup exams are segmented and registered to preop,
     # with -preop only the preop exams are processed (segmentation, standard plan, growth
-    # model predictions and their plans). With -gliodil_plans only the gliodil plans are
-    # regenerated from the existing gliodil predictions (nothing else is run).
+    # model predictions and their plans). With -plans only the plans of all existing growth
+    # model predictions are regenerated, after fixing the affine of predictions that were
+    # written in the wrong frame (nothing else is run).
     parser = argparse.ArgumentParser()
     parser.add_argument("-cuda_device", type=str, default="0", help="GPU id to run on.")
     parser.add_argument(
@@ -302,12 +373,13 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument(
-        "-gliodil_plans",
+        "-plans",
         action="store_true",
         help=(
-            "Only regenerate the gliodil radiotherapy plans of the preop exams from the "
-            "existing growth_models/gliodil_pred.nii.gz predictions, overwriting the old "
-            "plans. No segmentation, prediction or registration is run."
+            "Only regenerate the radiotherapy plans of all existing growth model predictions "
+            "(growth_models/<model>_pred.nii.gz) of the preop exams, overwriting the old "
+            "plans. Predictions whose affine differs from the tumor segmentation are rewritten "
+            "with its affine first. No segmentation, prediction or registration is run."
         ),
     )
     parser.add_argument(
@@ -339,7 +411,9 @@ if __name__ == "__main__":
         logger.info(f"Predicting with growth models {list(growth_model_paths)}.")
 
     data_dir = Path(args.data_dir)
-    patient_dirs = sorted(d for d in data_dir.iterdir() if d.is_dir())
+    patient_dirs = sorted(
+        d for d in data_dir.iterdir() if d.is_dir() and d.name.startswith("respond_tum_")
+    )
 
     for patient_dir in patient_dirs:
         patient_id = patient_dir.name
@@ -353,21 +427,26 @@ if __name__ == "__main__":
             continue
 
         preop_dir = exam_dirs["preop"]
-        if args.gliodil_plans:
-            pred_file = FLAT_PREDICTION_SCHEMA.format(base_dir=preop_dir, algo_id="gliodil")
-            if not pred_file.exists():
-                logger.error(f"{patient_id}/{preop_dir.name}: {pred_file} not found, skipping.")
+        if args.plans:
+            model_ids = find_prediction_ids(preop_dir)
+            if not model_ids:
+                logger.error(f"{patient_id}/{preop_dir.name}: no predictions found, skipping.")
                 continue
-            try:
-                create_model_plan(preop_dir, "gliodil")
-            except Exception:
-                logger.exception(f"{patient_id}/{preop_dir.name}: gliodil plan failed, skipping.")
+            for model_id in model_ids:
+                try:
+                    fix_prediction_affine(preop_dir, model_id)
+                    create_model_plan(preop_dir, model_id)
+                except Exception:
+                    logger.exception(
+                        f"{patient_id}/{preop_dir.name}: {model_id} plan failed, skipping model."
+                    )
             continue
 
         if args.preop:
             logger.info(f"{patient_id}/{preop_dir.name}: starting tumor segmentation.")
             try:
                 segment_tumor(preop_dir, args.cuda_device)
+                relabel_preop_cavity(preop_dir)
                 create_preop_standard_plan(preop_dir)
             except Exception:
                 logger.exception(

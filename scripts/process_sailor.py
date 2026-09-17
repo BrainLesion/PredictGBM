@@ -1,5 +1,6 @@
 import os
 import json
+import shutil
 import argparse
 import ants
 import torch
@@ -9,7 +10,6 @@ from pathlib import Path
 from loguru import logger
 from predict_gbm.utils.parsing import PatientDataset
 from predict_gbm.utils.constants import (
-    BRAIN_MASK_SCHEMA,
     CONFIG_SCHEMA,
     CONFIG_STEP_REGISTER_RECURRENCE,
     LONGITUDINAL_AFFINE_SCHEMA,
@@ -38,16 +38,22 @@ MISSING_MODALITY_KEYS = {
     "flair": "flair",
 }
 
-# Radiotherapy dose map (Gy) per patient, stored in the native frame of the RT planning MRI
-# (one of the post-op exams, e.g. ses-03 for sub-01). It is treated as an additional
-# quantitative modality named "dose".
+# Radiotherapy dose map (Gy) per patient. Its voxel grid (and header) is that of the raw RT
+# planning MRI (one of the post-op exams, e.g. ses-03 for sub-01), but its content lies in
+# the world frame of the derivatives, i.e. MNI ICBM 2009c space (ONCOHabitats rigid+affine
+# registration). It is treated as an additional quantitative modality named "dose".
 DOSE_MAP_SCHEMA = PathSchema("{dose_map_dir}/{patient_id}/DoseMap.nii.gz")
 DOSE_MODALITY = "dose"
 # Max. deviation (mm) between the world-space bounding boxes of the dose map and an exam's
 # raw t1c for the exam to count as the planning MRI the dose map was resampled onto.
-DOSE_MAP_MATCH_TOLERANCE_MM = 5.0
-# Affine written by brainles (ANTs) mapping the raw t1c into the atlas.
-ATLAS_AFFINE_SCHEMA = REGISTRATION_TRAFO_SCHEMA / "t1c" / "2_M_atlas__t1c.mat"
+DOSE_MAP_MATCH_TOLERANCE_MM = 10.0
+# Skull-stripped, MNI-space T1c of the derivatives, used to register the derivatives' MNI
+# frame (the frame the dose map content lies in) to the pipeline's atlas space. All sessions
+# of a patient share the MNI frame, so a fixed session is used.
+DOSE_MNI_T1C_SCHEMA = PathSchema("{dose_map_dir}/{patient_id}/{session}/T1c.nii.gz")
+DOSE_MNI_SESSION = "ses-03"
+# Affine mapping the derivatives' MNI frame into the pipeline atlas space of an exam.
+DOSE_MNI_AFFINE_SCHEMA = REGISTRATION_TRAFO_SCHEMA / DOSE_MODALITY / "mni2009c_to_atlas.mat"
 
 
 def resolve_modalities(exam: dict, missing: list) -> dict | None:
@@ -154,7 +160,8 @@ def world_bbox(nifti_file: Path) -> np.ndarray:
 def find_dose_map_exam(dose_file: Path, exam_t1c_files: dict) -> str | None:
     """
     Identifies the exam whose raw t1c grid the dose map was resampled onto, i.e. the RT
-    planning MRI, by matching world-space bounding boxes. exam_t1c_files maps exam dir_name
+    planning MRI, by matching world-space bounding boxes. Only the grid is matched; the dose
+    map content itself lies in the derivatives' MNI frame. exam_t1c_files maps exam dir_name
     to the raw t1c path. Returns the dir_name of the best match, or None if no exam matches
     within DOSE_MAP_MATCH_TOLERANCE_MM.
     """
@@ -180,15 +187,27 @@ def find_dose_map_exam(dose_file: Path, exam_t1c_files: dict) -> str | None:
 
 
 def register_dose_map(
-    dose_file: Path, exam_outdir: Path, preop_outdir: Path | None, override: bool = False
+    dose_file: Path,
+    mni_t1c_file: Path,
+    exam_outdir: Path,
+    preop_outdir: Path | None,
+    override: bool = False,
+    override_longitudinal: bool = False,
 ) -> None:
     """
-    Transforms the dose map (native frame of the exam in exam_outdir) to atlas space, using
-    the affine from that exam's t1c atlas registration, and then to preop space, using the
-    exam's longitudinal (followup-to-preop) transform from register_recurrence.
-    Outputs: <exam_outdir>/skull_stripped/dose_skullstripped.nii.gz (atlas space, brain masked)
-    and <exam_outdir>/longitudinal/dose_warped_longitudinal.nii.gz (preop space).
+    Transforms the dose map (content in the derivatives' MNI frame) to the atlas space of the
+    exam in exam_outdir, and then to preop space using the exam's longitudinal
+    (followup-to-preop) transform from register_recurrence.
+    The MNI-to-atlas affine is obtained by registering the derivatives' skull-stripped MNI T1c
+    (mni_t1c_file) to the exam's skull-stripped atlas t1c. It is applied to the dose map in
+    world coordinates, so the dose map's own (raw planning MRI) voxel grid is resampled onto
+    the atlas grid in a single interpolation. No brain masking is applied.
+    Outputs: <exam_outdir>/skull_stripped/dose/mni2009c_to_atlas.mat (the affine),
+    <exam_outdir>/skull_stripped/dose_skullstripped.nii.gz (atlas space) and
+    <exam_outdir>/longitudinal/dose_warped_longitudinal.nii.gz (preop space).
     If preop_outdir is None (the exam is the preop exam itself) only the atlas step is run.
+    If override_longitudinal is True, only the preop step is rerun (e.g. after the exam's
+    longitudinal transform has been recomputed); the atlas step still follows override.
     """
     dose_atlas_file = MODALITY_STRIPPED_SCHEMA.format(
         base_dir=exam_outdir, modality=DOSE_MODALITY
@@ -199,21 +218,31 @@ def register_dose_map(
         t1c_atlas = ants.image_read(
             str(MODALITY_STRIPPED_SCHEMA.format(base_dir=exam_outdir, modality="t1c"))
         )
-        brain_mask = ants.image_read(str(BRAIN_MASK_SCHEMA.format(base_dir=exam_outdir)))
-        if brain_mask.shape != t1c_atlas.shape:
-            raise ValueError(
-                f"{exam_outdir}: brain mask shape {brain_mask.shape} does not match atlas "
-                f"t1c shape {t1c_atlas.shape}."
-            )
+        mni_t1c = ants.image_read(str(mni_t1c_file))
+        affine_file = DOSE_MNI_AFFINE_SCHEMA.format(base_dir=exam_outdir)
+        affine_file.parent.mkdir(parents=True, exist_ok=True)
+        reg = ants.registration(
+            fixed=t1c_atlas,
+            moving=mni_t1c,
+            type_of_transform="Affine",
+            outprefix=str(affine_file.parent / "mni2009c_to_atlas_"),
+        )
+        shutil.copyfile(reg["fwdtransforms"][0], affine_file)
+        for tmp in reg["fwdtransforms"] + reg["invtransforms"]:
+            if Path(tmp).exists() and Path(tmp) != affine_file:
+                os.remove(tmp)
+        fixed_np, warped_np = t1c_atlas.numpy(), reg["warpedmovout"].numpy()
+        corr = np.corrcoef(fixed_np.ravel(), warped_np.ravel())[0, 1]
+        logger.info(
+            f"{exam_outdir}: registered MNI T1c to atlas t1c, correlation {corr:.3f}, "
+            f"saved affine to {affine_file}."
+        )
         dose_atlas = ants.apply_transforms(
             fixed=t1c_atlas,
             moving=ants.image_read(str(dose_file)),
-            transformlist=[str(ATLAS_AFFINE_SCHEMA.format(base_dir=exam_outdir))],
+            transformlist=[str(affine_file)],
             interpolator="linear",
             defaultvalue=0,
-        )
-        dose_atlas = dose_atlas.new_image_like(
-            dose_atlas.numpy() * (brain_mask.numpy() > 0)
         )
         ants.image_write(dose_atlas, str(dose_atlas_file))
         logger.info(f"Saved atlas-space dose map to {dose_atlas_file}.")
@@ -225,7 +254,7 @@ def register_dose_map(
     dose_preop_file = LONGITUDINAL_WARP_SCHEMA.format(
         base_dir=exam_outdir, modality=DOSE_MODALITY
     )
-    if dose_preop_file.exists() and not override:
+    if dose_preop_file.exists() and not (override or override_longitudinal):
         logger.info(f"{exam_outdir}: dose map preop registration already done, skipping.")
         return
 
@@ -257,11 +286,73 @@ def register_dose_map(
     logger.info(f"Saved preop-space dose map to {dose_preop_file}.")
 
 
+def visualize_dose_maps(outdir_root: Path, pdf_file: Path, rows_per_page: int = 5) -> None:
+    """
+    Writes a pdf with one row per patient (dose exam) showing the axial, sagittal and coronal
+    center slices of the atlas-space t1c with the atlas-space dose map overlaid (alpha 0.5).
+    """
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_pdf import PdfPages
+
+    dose_files = sorted(
+        outdir_root.glob(f"*/*/skull_stripped/{DOSE_MODALITY}_skullstripped.nii.gz")
+    )
+    if not dose_files:
+        logger.warning(f"No dose maps found under {outdir_root}, nothing to visualize.")
+        return
+    with PdfPages(pdf_file) as pdf:
+        for page_start in range(0, len(dose_files), rows_per_page):
+            page_files = dose_files[page_start : page_start + rows_per_page]
+            fig, axes = plt.subplots(
+                len(page_files), 3, figsize=(9, 3 * len(page_files)), squeeze=False
+            )
+            for row, dose_file in zip(axes, page_files):
+                exam_outdir = dose_file.parent.parent
+                t1c = nib.load(
+                    str(MODALITY_STRIPPED_SCHEMA.format(base_dir=exam_outdir, modality="t1c"))
+                ).get_fdata()
+                dose = nib.load(str(dose_file)).get_fdata()
+                dose = np.ma.masked_where(dose <= 0, dose)
+                cx, cy, cz = (np.array(t1c.shape) // 2).tolist()
+                slices = {
+                    "axial": (t1c[:, :, cz].T, dose[:, :, cz].T),
+                    "sagittal": (t1c[cx, :, :].T, dose[cx, :, :].T),
+                    "coronal": (t1c[:, cy, :].T, dose[:, cy, :].T),
+                }
+                for ax, (view, (anat, overlay)) in zip(row, slices.items()):
+                    ax.imshow(anat, cmap="gray", origin="lower")
+                    ax.imshow(
+                        overlay, cmap="jet", alpha=0.5, origin="lower", vmin=0, vmax=dose.max()
+                    )
+                    ax.set_title(view, fontsize=8)
+                    ax.axis("off")
+                row[0].text(
+                    -0.05,
+                    0.5,
+                    f"{exam_outdir.parent.name}/{exam_outdir.name}\nmax {float(dose.max()):.1f} Gy",
+                    transform=row[0].transAxes,
+                    fontsize=8,
+                    ha="right",
+                    va="center",
+                )
+            fig.tight_layout()
+            pdf.savefig(fig)
+            plt.close(fig)
+    logger.info(f"Saved dose map visualization of {len(dose_files)} exams to {pdf_file}.")
+
+
 if __name__ == "__main__":
     # Example:
     # nohup python -u scripts/process_sailor.py -cuda_device 0 > tmp_process_sailor.out 2>&1 &
     # Only (re)run the dose map step for a single patient:
     # python -u scripts/process_sailor.py -cuda_device 0 -patients sub-01 -dose_only
+    # Only write the dose map check pdf (existing dose outputs are skipped, not recomputed):
+    # python -u scripts/process_sailor.py -dose_only -visualize_dose
+    # Recompute the followup-to-preop registrations (and the preop-space dose maps) only:
+    # python -u scripts/process_sailor.py -cuda_device 0 -patients sub-01 -longitudinal_registration
     parser = argparse.ArgumentParser()
     parser.add_argument("-cuda_device", type=str, default="0", help="GPU id to run on.")
     parser.add_argument(
@@ -308,6 +399,20 @@ if __name__ == "__main__":
         help="Only run the dose map registration, using existing outputs of the other steps.",
     )
     parser.add_argument(
+        "-longitudinal_registration",
+        action="store_true",
+        help="Only recompute the longitudinal (postop/followup t1c to preop) registration of "
+        "every processed postop/followup exam, overwriting existing results, and apply the new "
+        "transform to the modalities this script warps to preop space (t1c, tumor segmentation "
+        "and dose map). Existing outputs of the other steps are reused.",
+    )
+    parser.add_argument(
+        "-visualize_dose",
+        action="store_true",
+        help="After processing, write <outdir>/dose_maps.pdf with the atlas-space t1c and "
+        "dose map overlay (center slices) of every exam holding a dose map.",
+    )
+    parser.add_argument(
         "-override",
         action="store_true",
         help="Rerun every step even if its output already exists, overwriting previous results.",
@@ -315,6 +420,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.cuda_device
+    # Modes reusing the existing per-exam outputs (skull stripping, tumor/tissue segmentation).
+    reuse_exam_outputs = args.dose_only or args.longitudinal_registration
 
     outdir_root = Path(args.outdir)
     outdir_root.mkdir(parents=True, exist_ok=True)
@@ -345,7 +452,7 @@ if __name__ == "__main__":
                 continue
 
             exam_outdir = outdir_root / patient_id / dir_name
-            if args.dose_only:
+            if reuse_exam_outputs:
                 if MODALITY_STRIPPED_SCHEMA.format(base_dir=exam_outdir, modality="t1c").exists():
                     exam_outdirs[dir_name] = (exam_outdir, exam["timepoint"])
                     exam_t1c_files[dir_name] = Path(modalities["t1c"])
@@ -375,9 +482,13 @@ if __name__ == "__main__":
                 continue
 
             recurrence_file = RECURRENCE_SCHEMA.format(base_dir=exam_outdir)
-            if args.dose_only:
+            if args.dose_only and not args.longitudinal_registration:
                 continue
-            if recurrence_file.exists() and not args.override:
+            if args.longitudinal_registration:
+                logger.info(
+                    f"{patient_id}/{dir_name}: recomputing longitudinal registration to preop."
+                )
+            elif recurrence_file.exists() and not args.override:
                 logger.info(f"{patient_id}/{dir_name}: recurrence registration already done, skipping.")
                 continue
 
@@ -397,12 +508,18 @@ if __name__ == "__main__":
                     f"{patient_id}/{dir_name}: recurrence registration failed, skipping."
                 )
 
-        # Dose map: native frame of the RT planning MRI -> atlas space -> preop space
+        # Dose map: derivatives MNI frame -> atlas space of the planning exam -> preop space
         dose_file = DOSE_MAP_SCHEMA.format(
             dose_map_dir=args.dose_map_dir, patient_id=patient_id
         )
         if not dose_file.exists():
             logger.warning(f"{patient_id}: no dose map found at {dose_file}, skipping.")
+            continue
+        mni_t1c_file = DOSE_MNI_T1C_SCHEMA.format(
+            dose_map_dir=args.dose_map_dir, patient_id=patient_id, session=DOSE_MNI_SESSION
+        )
+        if not mni_t1c_file.exists():
+            logger.warning(f"{patient_id}: no MNI T1c found at {mni_t1c_file}, skipping.")
             continue
         if args.dose_exam is not None:
             if Path(args.dose_exam) not in exam_outdirs:
@@ -430,11 +547,16 @@ if __name__ == "__main__":
         try:
             register_dose_map(
                 dose_file=dose_file,
+                mni_t1c_file=mni_t1c_file,
                 exam_outdir=dose_outdir,
                 preop_outdir=None if dose_timepoint == "preop" else preop_outdir,
                 override=args.override,
+                override_longitudinal=args.longitudinal_registration,
             )
         except Exception:
             logger.exception(f"{patient_id}/{dose_exam}: dose map registration failed.")
+
+    if args.visualize_dose:
+        visualize_dose_maps(outdir_root, outdir_root / "dose_maps.pdf")
 
     logger.info("Finished processing SAILOR dataset.")
