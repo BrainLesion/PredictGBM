@@ -50,6 +50,8 @@ class BasePreprocessor:
         additional_quantitative_modality_names (Optional[List[str]]): Same as
             additional_modality_names, but processed without intensity normalization (e.g. ADC).
         cuda_device (str): GPU device to use.
+        is_preop (bool): If true, the exam is pre-operative and the tumor segmentation runs its
+            pre-treatment branch (no resection cavity label). Defaults to false.
     """
 
     def __init__(
@@ -63,6 +65,7 @@ class BasePreprocessor:
         additional_modality_names: Optional[List[str]] = None,
         additional_quantitative_modality_names: Optional[List[str]] = None,
         cuda_device: str = "0",
+        is_preop: bool = False,
     ) -> None:
         self.outdir = outdir
         self.mask_tissueseg = mask_tissueseg
@@ -75,6 +78,7 @@ class BasePreprocessor:
             additional_quantitative_modality_names or []
         )
         self.cuda_device = cuda_device
+        self.is_preop = is_preop
 
         validate_additional_modality_names(
             self.additional_modality_names, self.additional_quantitative_modality_names
@@ -132,6 +136,7 @@ class BasePreprocessor:
                 ),
                 outdir=self.outdir,
                 cuda_device=self.cuda_device,
+                is_preop=self.is_preop,
             )
         elif self.perform_coregistration:
             tumorseg_file = TUMORSEG_SCHEMA.format(base_dir=self.outdir)
@@ -193,6 +198,8 @@ class DicomPreprocessor(BasePreprocessor):
             additional_modality_dirs, but not intensity-normalized (e.g. ADC).
          dcm2niix_location (Path, optional): The location of the dcm2niix executable.
          cuda_device (str): GPU device to use.
+         is_preop (bool): If true, the exam is pre-operative and the tumor segmentation runs its
+            pre-treatment branch (no resection cavity label). Defaults to false.
     """
 
     def __init__(
@@ -208,10 +215,12 @@ class DicomPreprocessor(BasePreprocessor):
         additional_quantitative_modality_dirs: Optional[Dict[str, Path]] = None,
         dcm2niix_location: Path = Path("dcm2niix"),
         cuda_device: str = "0",
+        is_preop: bool = False,
     ) -> None:
         super().__init__(
             outdir=outdir,
             cuda_device=cuda_device,
+            is_preop=is_preop,
             mask_tissueseg=mask_tissueseg,
             perform_coregistration=True,
             perform_skull_stripping=True,
@@ -287,6 +296,8 @@ class NiftiPreprocessor(BasePreprocessor):
         additional_quantitative_modalities (Optional, Dict[str, Path]): Same as
             additional_modalities, but not intensity-normalized (e.g. ADC).
         tumorseg_file (Optional, Path): Path to the tumor segmentation.
+        is_preop (bool): If true, the exam is pre-operative and the tumor segmentation runs its
+            pre-treatment branch (no resection cavity label). Defaults to false.
     """
 
     def __init__(
@@ -304,10 +315,12 @@ class NiftiPreprocessor(BasePreprocessor):
         additional_quantitative_modalities: Optional[Dict[str, Path]] = None,
         tumorseg_file: Optional[Path] = None,
         cuda_device: str = "0",
+        is_preop: bool = False,
     ) -> None:
         super().__init__(
             outdir=outdir,
             cuda_device=cuda_device,
+            is_preop=is_preop,
             mask_tissueseg=mask_tissueseg,
             perform_coregistration=not is_coregistered,
             perform_skull_stripping=not is_skull_stripped,

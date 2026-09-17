@@ -13,6 +13,11 @@ from predict_gbm.utils.constants import (
 )
 from predict_gbm.utils.utils import update_config
 
+# The brats package hardcodes the post-treatment timepoint suffix (-100) for the pre-and-post
+# segmenter. The BraTS25_1 container branches on this suffix (0xx = pre, 1xx = post), and only
+# the pre-treatment branch removes the resection cavity label.
+BRATS_PREOP_NAME_SCHEMA = "BraTS-GLI-{id:05d}-000"
+
 
 def split_segmentation(
     tumor_seg_file: Path,
@@ -67,6 +72,7 @@ def run_brats(
     flair_file: Path,
     outdir: Path,
     cuda_device: str = "0",
+    is_preop: bool = False,
 ) -> None:
     """
     Segments tumor based on common MRI modalities using brainles BRATS module.
@@ -78,17 +84,22 @@ def run_brats(
         flair_file (Path): Path to the flair file.
         outdir (Path): Directory to save the output to. Usually exam directory.
         cuda_device (str): The GPU device to run on.
+        is_preop (bool): If true, runs the pre-treatment branch of the segmentation algorithm
+            (no resection cavity label). Otherwise the post-treatment branch is used.
 
     Returns:
         None
     """
     start_time = time.time()
-    logger.info("Starting tumor segmentation via BRATS.")
+    timepoint = "preop" if is_preop else "postop"
+    logger.info(f"Starting tumor segmentation via BRATS ({timepoint} branch).")
     algorithm = AdultGliomaPreAndPostTreatmentAlgorithms.BraTS25_1
     segmenter = AdultGliomaPreAndPostTreatmentSegmenter(
         algorithm=algorithm,
         cuda_devices=cuda_device,
     )
+    if is_preop:
+        segmenter.algorithm.run_args.input_name_schema = BRATS_PREOP_NAME_SCHEMA
 
     seg_outfile = str(TUMORSEG_SCHEMA.format(base_dir=outdir))
     segmenter.infer_single(
@@ -101,7 +112,11 @@ def run_brats(
 
     split_segmentation(seg_outfile, outdir)
 
-    update_config(outdir, CONFIG_STEP_TUMOR_SEG, {"algorithm": algorithm.value})
+    update_config(
+        outdir,
+        CONFIG_STEP_TUMOR_SEG,
+        {"algorithm": algorithm.value, "timepoint": timepoint},
+    )
 
     time_spent = time.time() - start_time
     logger.info(

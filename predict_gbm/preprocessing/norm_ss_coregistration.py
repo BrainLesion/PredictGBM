@@ -51,6 +51,21 @@ ANTS_REGISTRATION_TRANSFORMS = {
 SUPPORTED_REGISTRATION_ALGORITHMS = ("dirac",) + tuple(ANTS_REGISTRATION_TRANSFORMS)
 
 
+class LinearANTsRegistrator(ANTsRegistrator):
+    """
+    ANTsRegistrator that resamples with linear interpolation by default.
+
+    Temporary solution: brainles_preprocessing (up to 0.6.13) defaults ANTsRegistrator.transform
+    to "nearestNeighbor", which is only appropriate for label maps, and the interpolator cannot
+    be set via transformation_params (it is a separate argument of transform). Remove this class
+    once brainles_preprocessing exposes a proper way to select the interpolator for the MRI
+    modalities.
+    """
+
+    def transform(self, *args, interpolator: str = "linear", **kwargs) -> None:
+        super().transform(*args, interpolator=interpolator, **kwargs)
+
+
 def normalize(img_file: Path, outfile: Path) -> None:
     """Performs the normalization step from norm_ss_coregister using a percentile normalizer."""
     logger.info(f"Running plain normalization for {img_file}.")
@@ -266,7 +281,7 @@ def norm_ss_coregister(
 
     atlas_schema = ATLAS_UNSTRIPPED_SCHEMA if skull_strip else ATLAS_STRIPPED_SCHEMA
 
-    registrator = ANTsRegistrator(transformation_params={"defaultvalue": 0})
+    registrator = LinearANTsRegistrator(transformation_params={"defaultvalue": 0})
     preprocessor = AtlasCentricPreprocessor(
         center_modality=center,
         moving_modalities=moving,

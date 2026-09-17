@@ -21,6 +21,7 @@ if __name__ == "__main__":
         cuda_device=args.cuda_device,
         is_skull_stripped=True,
         is_coregistered=False,
+        is_preop=True,
         # Optional: name -> nifti path, normalized like t1/t2/flair
         additional_modalities=None,
         # Optional: name -> nifti path, not intensity-normalized (e.g. ADC)
