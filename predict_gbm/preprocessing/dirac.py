@@ -16,13 +16,16 @@ Network and inference code originate from the DIRAC BraTSReg submission
 """
 
 import glob
+import math
 import os
 import shutil
 import subprocess
 import sys
 from argparse import ArgumentParser
 from pathlib import Path
+from typing import Any, Literal
 
+from loguru import logger
 import nibabel as nib
 import numpy as np
 import torch
@@ -1403,81 +1406,246 @@ def resize_disp_voxel(disp, size):
     return resized
 
 
-def pad_tensor_to_min_size(x, min_size, mode="constant", value=0.0):
-    _, _, d, h, w = x.shape
-    min_d, min_h, min_w = min_size
-    pad_d, pad_h, pad_w = max(min_d - d, 0), max(min_h - h, 0), max(min_w - w, 0)
-    pad_d0, pad_d1 = pad_d // 2, pad_d - (pad_d // 2)
-    pad_h0, pad_h1 = pad_h // 2, pad_h - (pad_h // 2)
-    pad_w0, pad_w1 = pad_w // 2, pad_w - (pad_w // 2)
-    pad = (pad_w0, pad_w1, pad_h0, pad_h1, pad_d0, pad_d1)
-    x_pad = (
-        F.pad(x, pad, mode=mode, value=float(value))
-        if mode == "constant"
-        else F.pad(x, pad, mode=mode)
+def _gaussian_kernel_1d(
+    sigma: float, device: torch.device, dtype: torch.dtype
+) -> torch.Tensor:
+    radius = int(math.ceil(3.0 * sigma))
+    x = torch.arange(-radius, radius + 1, device=device, dtype=dtype)
+    kernel = torch.exp(-0.5 * (x / sigma) ** 2)
+    return kernel / kernel.sum()
+
+
+def gaussian_blur_for_downsampling(
+    x: torch.Tensor, size: tuple[int, int, int]
+) -> torch.Tensor:
+    """Anti-alias blur applied before resampling a (1,C,D,H,W) tensor down to `size`.
+
+    Separable Gaussian with sigma = (factor - 1) / 2 per axis, where factor is the
+    downsampling ratio of that axis under the align_corners=True convention. Axes that
+    are not downsampled are left untouched; replicate padding avoids zero bleeding.
+    """
+    out = x
+    channels = x.shape[1]
+    for axis, (n_in, n_out) in enumerate(zip(x.shape[2:], size)):
+        factor = (n_in - 1) / max(n_out - 1, 1)
+        sigma = 0.5 * (factor - 1.0)
+        if sigma < 1e-3:
+            continue
+        kernel = _gaussian_kernel_1d(sigma, x.device, x.dtype)
+        shape = [1, 1, 1, 1, 1]
+        shape[2 + axis] = kernel.numel()
+        weight = kernel.view(shape).repeat(channels, 1, 1, 1, 1)
+        # F.pad order is (w0, w1, h0, h1, d0, d1); tensor axis 0 (D) maps to pad[4:6].
+        radius = kernel.numel() // 2
+        pad = [0] * 6
+        pad[2 * (2 - axis)] = radius
+        pad[2 * (2 - axis) + 1] = radius
+        out = F.conv3d(F.pad(out, pad, mode="replicate"), weight, groups=channels)
+    return out
+
+
+def resample_antialiased(x: torch.Tensor, size: tuple[int, int, int]) -> torch.Tensor:
+    """Blur (see gaussian_blur_for_downsampling) then trilinearly resample to `size`."""
+    if tuple(x.shape[2:]) == tuple(size):
+        return x
+    return F.interpolate(
+        gaussian_blur_for_downsampling(x, size),
+        size=size,
+        mode="trilinear",
+        align_corners=True,
     )
-    crop_slices = (
-        slice(pad_d0, pad_d0 + d),
-        slice(pad_h0, pad_h0 + h),
-        slice(pad_w0, pad_w0 + w),
+
+
+def resize_disp_voxel_antialiased(
+    disp: torch.Tensor, size: tuple[int, int, int]
+) -> torch.Tensor:
+    """Anti-aliased resize_disp_voxel: blur, resample, rescale voxel magnitudes."""
+    if tuple(disp.shape[2:]) == tuple(size):
+        return disp
+    return resize_disp_voxel(gaussian_blur_for_downsampling(disp, size), size)
+
+
+def _per_axis_scale(
+    disp: torch.Tensor, scale_w: float, scale_h: float, scale_d: float
+) -> torch.Tensor:
+    scale = torch.tensor(
+        [scale_w, scale_h, scale_d], device=disp.device, dtype=disp.dtype
     )
-    return x_pad, crop_slices
+    return disp * scale.view(1, 3, 1, 1, 1)
 
 
-def crop_to_slices(x, crop_slices):
-    d_slice, h_slice, w_slice = crop_slices
-    return x[:, :, d_slice, h_slice, w_slice]
+def voxel_disp_to_norm_units(disp: torch.Tensor) -> torch.Tensor:
+    """Scale a (1,3,D,H,W) voxel displacement to normalized [-1,1] units per axis."""
+    _, _, d, h, w = disp.shape
+    return _per_axis_scale(
+        disp, 2.0 / max(w - 1, 1), 2.0 / max(h - 1, 1), 2.0 / max(d - 1, 1)
+    )
 
 
-def ncc_loss(i, j, mask=None, win=3, eps=1e-5):
+def voxel_disp_to_mok_units(disp: torch.Tensor) -> torch.Tensor:
+    """Scale to the units of Mok's smoothness term: normalized displacement times the
+    image dimensions, i.e. a factor 2N/(N-1) (about 2x voxel units) per axis."""
+    _, _, d, h, w = disp.shape
+    return _per_axis_scale(
+        disp,
+        2.0 * w / max(w - 1, 1),
+        2.0 * h / max(h - 1, 1),
+        2.0 * d / max(d - 1, 1),
+    )
+
+
+def _box_sum(x: torch.Tensor, win: int) -> torch.Tensor:
+    """Sum over a win^3 box with zero padding, as three separable 1-D convolutions
+    (identical to a dense win^3 ones kernel, 3*win instead of win^3 taps)."""
     pad = win // 2
-    filt = torch.ones((1, 1, win, win, win), device=i.device, dtype=i.dtype)
-
-    def conv(x):
-        return F.conv3d(x, filt, padding=pad)
-
-    if mask is None:
-        mask = torch.ones_like(i)
-    mask = mask.to(dtype=i.dtype)
-    i2, j2, ij = i * i, j * j, i * j
-    w_sum = conv(mask)
-    i_sum, j_sum = conv(mask * i), conv(mask * j)
-    i2_sum, j2_sum, ij_sum = conv(mask * i2), conv(mask * j2), conv(mask * ij)
-    u_i, u_j = i_sum / (w_sum + eps), j_sum / (w_sum + eps)
-    cross = ij_sum - u_j * i_sum - u_i * j_sum + u_i * u_j * w_sum
-    i_var = i2_sum - 2 * u_i * i_sum + u_i * u_i * w_sum
-    j_var = j2_sum - 2 * u_j * j_sum + u_j * u_j * w_sum
-    ncc = cross * cross / (i_var * j_var + eps)
-    valid = (w_sum > 0).to(dtype=i.dtype)
-    return -(ncc * valid).sum()
+    ones = torch.ones((1, 1, 1, 1, win), device=x.device, dtype=x.dtype)
+    x = F.conv3d(x, ones, padding=(0, 0, pad))
+    x = F.conv3d(x, ones.view(1, 1, 1, win, 1), padding=(0, pad, 0))
+    return F.conv3d(x, ones.view(1, 1, win, 1, 1), padding=(pad, 0, 0))
 
 
-def smoothness(disp, valid_mask=None):
+def ncc_loss(
+    i: torch.Tensor,
+    j: torch.Tensor,
+    weight: torch.Tensor | None = None,
+    win: int = 3,
+    eps: float = 1e-5,
+) -> torch.Tensor:
+    """Negative local NCC following Mok's NCC_weight: local statistics over a win^3 box,
+    cc = cross^2 / (var_i * var_j + eps), the weight map applied after the local
+    statistics, mean over all voxels. Returns a value in [-1, 0]."""
+    n_win = float(win**3)
+
+    def conv(x: torch.Tensor) -> torch.Tensor:
+        return _box_sum(x, win)
+
+    i_sum, j_sum = conv(i), conv(j)
+    i2_sum, j2_sum, ij_sum = conv(i * i), conv(j * j), conv(i * j)
+    u_i, u_j = i_sum / n_win, j_sum / n_win
+    cross = ij_sum - u_j * i_sum - u_i * j_sum + u_i * u_j * n_win
+    i_var = i2_sum - 2 * u_i * i_sum + u_i * u_i * n_win
+    j_var = j2_sum - 2 * u_j * j_sum + u_j * u_j * n_win
+    cc = cross * cross / (i_var * j_var + eps)
+    if weight is not None:
+        cc = cc * weight.to(dtype=cc.dtype)
+    return -cc.mean()
+
+
+def multi_scale_ncc_loss(
+    i: torch.Tensor,
+    j: torch.Tensor,
+    weight: torch.Tensor | None = None,
+    win: int = 3,
+    n_scales: int = 3,
+    eps: float = 1e-5,
+) -> torch.Tensor:
+    """Mok's multi_resolution_NCC_weight: NCC with window win + 2*(n_scales-1-s) at
+    scale s over 3x3x3/stride-2 average-pooled images and weights, weighted 1/2^s.
+    With the defaults this is windows 7, 5, 3 at scales 0, 1, 2."""
+    total: torch.Tensor | None = None
+    for s in range(n_scales):
+        win_s = win + 2 * (n_scales - 1 - s)
+        term = ncc_loss(i, j, weight, win=win_s, eps=eps) / (2**s)
+        total = term if total is None else total + term
+        if s + 1 < n_scales:
+            i = F.avg_pool3d(i, 3, stride=2, padding=1, count_include_pad=False)
+            j = F.avg_pool3d(j, 3, stride=2, padding=1, count_include_pad=False)
+            if weight is not None:
+                weight = F.avg_pool3d(
+                    weight, 3, stride=2, padding=1, count_include_pad=False
+                )
+    assert total is not None
+    return total
+
+
+def smoothness(disp: torch.Tensor) -> torch.Tensor:
+    """Mok's smoothloss: mean squared forward difference per axis, averaged over axes.
+    Callers pass the field in Mok's units (see voxel_disp_to_mok_units)."""
     dx = disp[:, :, :, :, 1:] - disp[:, :, :, :, :-1]
     dy = disp[:, :, :, 1:, :] - disp[:, :, :, :-1, :]
     dz = disp[:, :, 1:, :, :] - disp[:, :, :-1, :, :]
-    if valid_mask is None:
-        return dx.pow(2).sum() + dy.pow(2).sum() + dz.pow(2).sum()
-    valid_mask = valid_mask.to(dtype=disp.dtype)
-    mx = valid_mask[:, :, :, :, 1:] * valid_mask[:, :, :, :, :-1]
-    my = valid_mask[:, :, :, 1:, :] * valid_mask[:, :, :, :-1, :]
-    mz = valid_mask[:, :, 1:, :, :] * valid_mask[:, :, :-1, :, :]
-    return (dx.pow(2) * mx).sum() + (dy.pow(2) * my).sum() + (dz.pow(2) * mz).sum()
+    return (dx.pow(2).mean() + dy.pow(2).mean() + dz.pow(2).mean()) / 3.0
 
 
-def inv_consistency(d_fwd, d_bwd, m_fwd=None, m_bwd=None, valid_mask=None):
+def inv_consistency(
+    d_fwd: torch.Tensor,
+    d_bwd: torch.Tensor,
+    m_fwd: torch.Tensor | None = None,
+    m_bwd: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Mok's inverse-consistency term, summed over both directions: the unsquared norm
+    of the composition error in normalized coordinates, weighted by (1 - mask), mean
+    over all voxels. Fields are in voxel units of their own grid."""
     bwd_warped, fwd_warped = warp_field(d_bwd, d_fwd), warp_field(d_fwd, d_bwd)
-    err_fwd = ((d_fwd + bwd_warped) ** 2).sum(dim=1, keepdim=True)
-    err_bwd = ((d_bwd + fwd_warped) ** 2).sum(dim=1, keepdim=True)
-    w_fwd, w_bwd = torch.ones_like(err_fwd), torch.ones_like(err_bwd)
+    err_fwd = voxel_disp_to_norm_units(d_fwd + bwd_warped).norm(dim=1, keepdim=True)
+    err_bwd = voxel_disp_to_norm_units(d_bwd + fwd_warped).norm(dim=1, keepdim=True)
     if m_fwd is not None:
-        w_fwd = w_fwd * (1.0 - m_fwd.to(dtype=err_fwd.dtype))
+        err_fwd = err_fwd * (1.0 - m_fwd.to(dtype=err_fwd.dtype))
     if m_bwd is not None:
-        w_bwd = w_bwd * (1.0 - m_bwd.to(dtype=err_bwd.dtype))
-    if valid_mask is not None:
-        vm = valid_mask.to(dtype=err_fwd.dtype)
-        w_fwd, w_bwd = w_fwd * vm, w_bwd * vm
-    return (err_fwd * w_fwd).sum() + (err_bwd * w_bwd).sum()
+        err_bwd = err_bwd * (1.0 - m_bwd.to(dtype=err_bwd.dtype))
+    return err_fwd.mean() + err_bwd.mean()
+
+
+def instopt_terms(
+    B_l: torch.Tensor,
+    F_l: torch.Tensor,
+    m_fb_l: torch.Tensor,
+    m_bf_l: torch.Tensor,
+    u_fb: torch.Tensor,
+    u_bf: torch.Tensor,
+    reg_fb: torch.Tensor,
+    reg_bf: torch.Tensor,
+    ncc_win: int = 3,
+    multi_scale_ncc: bool = False,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Similarity, smoothness and inverse-consistency terms of one pyramid level.
+
+    B_l / F_l: preop and followup images at this level. m_fb_l / m_bf_l: occlusion
+    masks in preop and followup space; (1 - m) weights the similarity and
+    inverse-consistency terms. u_fb / u_bf: dense displacement fields in voxel units of
+    this level (followup->preop on the preop grid, preop->followup on the followup
+    grid). reg_fb / reg_bf: the fields the smoothness term is applied to (the total
+    field or the residual only). Returns (l_s, l_r, l_inv), each summed over both
+    directions, so l_s is in [-2, 0].
+    """
+    w_fb, w_bf = 1.0 - m_fb_l, 1.0 - m_bf_l
+    if multi_scale_ncc:
+        l_s = multi_scale_ncc_loss(
+            B_l, warp(F_l, u_fb), w_fb, win=ncc_win
+        ) + multi_scale_ncc_loss(F_l, warp(B_l, u_bf), w_bf, win=ncc_win)
+    else:
+        l_s = ncc_loss(B_l, warp(F_l, u_fb), w_fb, win=ncc_win) + ncc_loss(
+            F_l, warp(B_l, u_bf), w_bf, win=ncc_win
+        )
+    l_r = smoothness(voxel_disp_to_mok_units(reg_fb)) + smoothness(
+        voxel_disp_to_mok_units(reg_bf)
+    )
+    l_inv = inv_consistency(u_fb, u_bf, m_fb_l, m_bf_l)
+    return l_s, l_r, l_inv
+
+
+def _field_magnitude_stats(disp: torch.Tensor) -> dict[str, float]:
+    mag = disp.norm(dim=1).flatten()
+    k = max(1, int(round(0.95 * mag.numel())))
+    return {
+        "mean": float(mag.mean()),
+        "p95": float(mag.kthvalue(k).values),
+        "max": float(mag.max()),
+    }
+
+
+def _format_stats(s: dict[str, float]) -> str:
+    return f"{s['mean']:.3f}/{s['p95']:.3f}/{s['max']:.3f}"
+
+
+def _control_grid_to_voxel_disp(
+    c: torch.Tensor, size: tuple[int, int, int]
+) -> torch.Tensor:
+    """Upsample a control grid in normalized per-axis units to a dense displacement in
+    voxel units of a grid of shape `size`."""
+    d, h, w = size
+    dense = F.interpolate(c, size=size, mode="trilinear", align_corners=True)
+    return _per_axis_scale(dense, (w - 1) / 2.0, (h - 1) / 2.0, (d - 1) / 2.0)
 
 
 def load_image_for_grid_sample(path, device):
@@ -1512,143 +1680,176 @@ def grid_sample_disp_to_dirac_voxel(disp):
 
 
 def dirac_instance_optimization(
-    B,
-    Fup,
-    disp_fb_init,
-    disp_bf_init,
-    m_fb_fixed=None,
-    m_bf_fixed=None,
-    lambdas_reg=(0.25, 0.3, 0.3, 0.35, 0.35),
-    lambdas_inv=(1.0, 2.0, 4.0, 8.0, 10.0),
-    lrs=(1e-2, 5e-3, 5e-3, 3e-3, 3e-3),
-    iters=(150, 100, 100, 100, 50),
-):
+    B: torch.Tensor,
+    Fup: torch.Tensor,
+    disp_fb_init: torch.Tensor,
+    disp_bf_init: torch.Tensor,
+    m_fb_fixed: torch.Tensor | None = None,
+    m_bf_fixed: torch.Tensor | None = None,
+    lambdas_reg: tuple[float, ...] = (0.25, 0.3, 0.3, 0.35, 0.35),
+    lambdas_inv: tuple[float, ...] = (1.0, 2.0, 4.0, 8.0, 10.0),
+    lrs: tuple[float, ...] = (1e-2, 5e-3, 5e-3, 3e-3, 3e-3),
+    iters: tuple[int, ...] = (150, 100, 100, 100, 50),
+    regularize: Literal["total", "residual"] = "residual",
+    multi_scale_ncc: bool = False,
+    ncc_win: int = 3,
+    coarsest_size: int = 80,
+    grid_range: tuple[int, int] = (32, 64),
+    stats: dict[str, Any] | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Instance optimization of the DIRAC displacement fields (Mok & Chung, Table 1).
+
+    The output field is `u = u_dirac + upsample(c)`: the network field `u_dirac` stays
+    frozen at native resolution and a residual control grid `c` (zero-initialized, in
+    normalized per-axis coordinates so Table 1's Adam learning rates apply) is optimized
+    over a coarse-to-fine pyramid. Levels are built with an anti-aliased resize
+    (Gaussian blur + trilinear), aspect-preserving, from `coarsest_size` on the largest
+    axis to native resolution with geometric spacing; control grids go linearly from
+    grid_range[0]^3 to grid_range[1]^3. Loss per level, with Mok's normalization of each
+    term: (1 - lam_reg) * l_s + lam_reg * l_r + lam_inv * l_inv (see instopt_terms).
+    `regularize` selects what the smoothness term l_r acts on: "total" = the full field
+    u_dirac + upsample(c) (Mok's convention, smooths the network field as well);
+    "residual" = the correction upsample(c) only (pipeline default: keeps the correction
+    inside the occlusion mask bounded and leaves the network field's detail intact).
+    `multi_scale_ncc` replaces the single-window NCC (win=`ncc_win`) by Mok's
+    multi-resolution NCC (windows 7/5/3); default off.
+
+    B, Fup: preop and followup images (1,1,D,H,W). disp_*_init: voxel displacement
+    fields (1,3,D,H,W) with channels [dx->W, dy->H, dz->D]. m_*_fixed: occlusion masks
+    in preop / followup space. If `stats` is given, per-level diagnostics (term values
+    and gradient norms at iteration 0, field magnitude before/after) are stored in it.
+    Returns (disp_fb, disp_bf, m_fb, m_bf) at native resolution.
+
+    GPU runs are not bitwise reproducible (the grid_sample backward uses atomic adds);
+    on 240x240x155 cases two runs differ by about 0.03-0.07 voxels on average and up
+    to about 2 voxels at isolated voxel clusters in the brain outside the occlusion
+    mask (below 0.8 voxels inside it), so similarity and fold statistics are stable
+    to three decimals while |u| statistics are not. CPU runs are deterministic.
+    """
     if m_fb_fixed is None:
         m_fb_fixed = torch.zeros_like(B)
     if m_bf_fixed is None:
         m_bf_fixed = torch.zeros_like(B)
-    _, _, d_full, h_full, w_full = B.shape
-    dmin, hmin, wmin, g_min, g_max = 80, 80, 80, 32, 64
     n_levels = len(lrs)
-    scale_min = min(dmin / d_full, hmin / h_full, wmin / w_full, 1.0)
-    scales = [
-        scale_min + (1.0 - scale_min) * i / max(n_levels - 1, 1)
-        for i in range(n_levels)
-    ]
-    pyr_sizes_base = [
-        (
-            max(1, int(round(d_full * s))),
-            max(1, int(round(h_full * s))),
-            max(1, int(round(w_full * s))),
-        )
-        for s in scales
-    ]
-    pyr_sizes = [
-        (max(d, dmin), max(h, hmin), max(w, wmin)) for (d, h, w) in pyr_sizes_base
-    ]
-    grid_sizes = [
-        int(round(g_min + (g_max - g_min) * i / max(n_levels - 1, 1)))
-        for i in range(n_levels)
-    ]
-    disp_fb_full, disp_bf_full = (
-        disp_fb_init.clone().detach(),
-        disp_bf_init.clone().detach(),
-    )
+    if not (len(iters) == len(lambdas_reg) == len(lambdas_inv) == n_levels):
+        raise ValueError("lrs, iters, lambdas_reg and lambdas_inv must have equal length")
+    if regularize not in ("total", "residual"):
+        raise ValueError(f"regularize must be 'total' or 'residual', got {regularize!r}")
 
-    for lvl, (lr, n_iter, lam_reg, lam_inv) in enumerate(
-        zip(lrs, iters, lambdas_reg, lambdas_inv)
+    native = (int(B.shape[2]), int(B.shape[3]), int(B.shape[4]))
+    scale_min = min(coarsest_size / max(native), 1.0)
+    level_sizes: list[tuple[int, int, int]] = []
+    grid_sizes: list[int] = []
+    for lvl in range(n_levels):
+        t = lvl / max(n_levels - 1, 1) if n_levels > 1 else 1.0
+        s = scale_min ** (1.0 - t)
+        level_sizes.append(tuple(max(2, int(round(n * s))) for n in native))  # type: ignore[arg-type]
+        grid_sizes.append(int(round(grid_range[0] + (grid_range[1] - grid_range[0]) * t)))
+
+    u_dirac_fb, u_dirac_bf = disp_fb_init.detach(), disp_bf_init.detach()
+    g0 = grid_sizes[0]
+    c_fb = torch.zeros((1, 3, g0, g0, g0), device=B.device, dtype=B.dtype)
+    c_bf = torch.zeros_like(c_fb)
+
+    def total_native(c: torch.Tensor, u_dirac: torch.Tensor) -> torch.Tensor:
+        return u_dirac + _control_grid_to_voxel_disp(c, native)
+
+    level_stats: list[dict[str, Any]] = []
+    for lvl, (lr, n_iter, lam_reg, lam_inv, size, g) in enumerate(
+        zip(lrs, iters, lambdas_reg, lambdas_inv, level_sizes, grid_sizes)
     ):
-        d_base, h_base, w_base = pyr_sizes_base[lvl]
-        d, h, w = pyr_sizes[lvl]
-        g = grid_sizes[lvl]
-        B_l_base = F.interpolate(
-            B, size=(d_base, h_base, w_base), mode="trilinear", align_corners=True
-        )
-        F_l_base = F.interpolate(
-            Fup, size=(d_base, h_base, w_base), mode="trilinear", align_corners=True
-        )
-        mfb_l_base = F.interpolate(
-            m_fb_fixed, size=(d_base, h_base, w_base), mode="nearest"
-        )
-        mbf_l_base = F.interpolate(
-            m_bf_fixed, size=(d_base, h_base, w_base), mode="nearest"
-        )
-        B_l, crop_slices = pad_tensor_to_min_size(
-            B_l_base, min_size=(dmin, hmin, wmin), mode="replicate"
-        )
-        F_l, _ = pad_tensor_to_min_size(
-            F_l_base, min_size=(dmin, hmin, wmin), mode="replicate"
-        )
-        mfb_l, _ = pad_tensor_to_min_size(
-            mfb_l_base, min_size=(dmin, hmin, wmin), mode="constant", value=1.0
-        )
-        mbf_l, _ = pad_tensor_to_min_size(
-            mbf_l_base, min_size=(dmin, hmin, wmin), mode="constant", value=1.0
-        )
-        valid_mask = torch.zeros_like(B_l)
-        d_slice, h_slice, w_slice = crop_slices
-        valid_mask[:, :, d_slice, h_slice, w_slice] = 1.0
-        disp_fb_l_base = resize_disp_voxel(disp_fb_full, size=(d_base, h_base, w_base))
-        disp_bf_l_base = resize_disp_voxel(disp_bf_full, size=(d_base, h_base, w_base))
-        disp_fb_l, crop_slices_disp = pad_tensor_to_min_size(
-            disp_fb_l_base, min_size=(dmin, hmin, wmin), mode="replicate"
-        )
-        disp_bf_l, _ = pad_tensor_to_min_size(
-            disp_bf_l_base, min_size=(dmin, hmin, wmin), mode="replicate"
-        )
-        if crop_slices_disp != crop_slices:
-            raise RuntimeError("Padding crop mismatch")
-        cp_fb = (
-            F.interpolate(
-                disp_fb_l, size=(g, g, g), mode="trilinear", align_corners=True
-            )
-            .detach()
-            .requires_grad_(True)
-        )
-        cp_bf = (
-            F.interpolate(
-                disp_bf_l, size=(g, g, g), mode="trilinear", align_corners=True
-            )
-            .detach()
-            .requires_grad_(True)
-        )
-        opt = torch.optim.Adam([cp_fb, cp_bf], lr=lr)
+        if c_fb.shape[2] != g:
+            c_fb = F.interpolate(c_fb, size=(g, g, g), mode="trilinear", align_corners=True)
+            c_bf = F.interpolate(c_bf, size=(g, g, g), mode="trilinear", align_corners=True)
+        c_fb = c_fb.detach().requires_grad_(True)
+        c_bf = c_bf.detach().requires_grad_(True)
+        with torch.no_grad():
+            B_l, F_l = resample_antialiased(B, size), resample_antialiased(Fup, size)
+            m_fb_l = resample_antialiased(m_fb_fixed, size).clamp(0.0, 1.0)
+            m_bf_l = resample_antialiased(m_bf_fixed, size).clamp(0.0, 1.0)
+            u_dirac_fb_l = resize_disp_voxel_antialiased(u_dirac_fb, size)
+            u_dirac_bf_l = resize_disp_voxel_antialiased(u_dirac_bf, size)
+            mag_before = _field_magnitude_stats(total_native(c_fb, u_dirac_fb))
+        # Adam moves each control point by about lr per step; in native voxels that is
+        # lr * (N - 1) / 2 per axis (x, y, z).
+        step_vox = tuple(lr * (n - 1) / 2.0 for n in (native[2], native[1], native[0]))
 
+        def weighted_terms() -> dict[str, torch.Tensor]:
+            r_fb = _control_grid_to_voxel_disp(c_fb, size)
+            r_bf = _control_grid_to_voxel_disp(c_bf, size)
+            u_fb, u_bf = u_dirac_fb_l + r_fb, u_dirac_bf_l + r_bf
+            reg_fb, reg_bf = (u_fb, u_bf) if regularize == "total" else (r_fb, r_bf)
+            l_s, l_r, l_inv = instopt_terms(
+                B_l, F_l, m_fb_l, m_bf_l, u_fb, u_bf, reg_fb, reg_bf, ncc_win, multi_scale_ncc
+            )
+            return {
+                "similarity": (1.0 - lam_reg) * l_s,
+                "smoothness": lam_reg * l_r,
+                "inverse_consistency": lam_inv * l_inv,
+            }
+
+        # Diagnostics at iteration 0: raw term values and the gradient norm of each
+        # weighted term with respect to both control grids.
+        init = weighted_terms()
+        init_values = {
+            "similarity": init["similarity"].item() / (1.0 - lam_reg),
+            "smoothness": init["smoothness"].item() / lam_reg if lam_reg else float("nan"),
+            "inverse_consistency": init["inverse_consistency"].item() / lam_inv if lam_inv else float("nan"),
+        }
+        init_grad_norms: dict[str, float] = {}
+        for name, term in init.items():
+            grads = torch.autograd.grad(term, [c_fb, c_bf], retain_graph=True, allow_unused=True)
+            sq = sum(float((gr**2).sum()) for gr in grads if gr is not None)
+            init_grad_norms[name] = math.sqrt(sq)
+        del init
+        logger.debug(
+            f"IO level {lvl} init: l_s {init_values['similarity']:.4f}, "
+            f"l_r {init_values['smoothness']:.4e}, l_inv {init_values['inverse_consistency']:.4e}; "
+            f"|d(weighted term)/dc|: similarity {init_grad_norms['similarity']:.3e}, "
+            f"smoothness {init_grad_norms['smoothness']:.3e}, "
+            f"inverse_consistency {init_grad_norms['inverse_consistency']:.3e}"
+        )
+
+        opt = torch.optim.Adam([c_fb, c_bf], lr=lr)
         for _ in range(n_iter):
-            disp_fb = F.interpolate(
-                cp_fb, size=(d, h, w), mode="trilinear", align_corners=True
-            )
-            disp_bf = F.interpolate(
-                cp_bf, size=(d, h, w), mode="trilinear", align_corners=True
-            )
-            F_warp, B_warp = warp(F_l, disp_fb), warp(B_l, disp_bf)
-            Ls = ncc_loss(B_l, F_warp, mask=(1 - mfb_l)) + ncc_loss(
-                F_l, B_warp, mask=(1 - mbf_l)
-            )
-            Lr = smoothness(disp_fb, valid_mask) + smoothness(disp_bf, valid_mask)
-            Linv = inv_consistency(disp_fb, disp_bf, mfb_l, mbf_l, valid_mask)
-            loss = (1 - lam_reg) * Ls + lam_reg * Lr + lam_inv * Linv
+            loss = sum(weighted_terms().values())
             opt.zero_grad()
             loss.backward()
             opt.step()
 
-        disp_fb_level = F.interpolate(
-            cp_fb.detach(), size=(d, h, w), mode="trilinear", align_corners=True
+        c_fb, c_bf = c_fb.detach(), c_bf.detach()
+        with torch.no_grad():
+            mag_after = _field_magnitude_stats(total_native(c_fb, u_dirac_fb))
+            residual_mean = float(_control_grid_to_voxel_disp(c_fb, native).norm(dim=1).mean())
+        logger.info(
+            f"IO level {lvl}: size {size}, grid {g}^3, {n_iter} iters, lr {lr:g} "
+            f"(initial step ~ {step_vox[0]:.2f}/{step_vox[1]:.2f}/{step_vox[2]:.2f} voxels x/y/z), "
+            f"|u| mean/p95/max {_format_stats(mag_before)} -> {_format_stats(mag_after)}, "
+            f"mean |u - u_dirac| {residual_mean:.3f}"
         )
-        disp_bf_level = F.interpolate(
-            cp_bf.detach(), size=(d, h, w), mode="trilinear", align_corners=True
+        level_stats.append(
+            {
+                "level": lvl,
+                "size": size,
+                "grid": g,
+                "iters": n_iter,
+                "lr": lr,
+                "step_vox": step_vox,
+                "init_terms": init_values,
+                "init_grad_norms": init_grad_norms,
+                "mag_before": mag_before,
+                "mag_after": mag_after,
+                "residual_mean": residual_mean,
+            }
         )
-        disp_fb_base = crop_to_slices(disp_fb_level, crop_slices)
-        disp_bf_base = crop_to_slices(disp_bf_level, crop_slices)
-        disp_fb_full = resize_disp_voxel(disp_fb_base, size=(d_full, h_full, w_full))
-        disp_bf_full = resize_disp_voxel(disp_bf_base, size=(d_full, h_full, w_full))
 
-    return (
-        disp_fb_full.detach(),
-        disp_bf_full.detach(),
-        m_fb_fixed.detach(),
-        m_bf_fixed.detach(),
-    )
+    with torch.no_grad():
+        disp_fb = total_native(c_fb, u_dirac_fb)
+        disp_bf = total_native(c_bf, u_dirac_bf)
+    if stats is not None:
+        stats["levels"] = level_stats
+        stats["regularize"] = regularize
+    return disp_fb, disp_bf, m_fb_fixed.detach(), m_bf_fixed.detach()
 
 
 # -----------------------------------------------------------------------------
