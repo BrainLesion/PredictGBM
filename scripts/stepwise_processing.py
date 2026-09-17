@@ -58,6 +58,7 @@ if __name__ == "__main__":
         outdir=outdir_preop,
         perform_tissueseg=True,
         cuda_device=args.cuda_device,
+        is_preop=True,
         # Optional: name -> DICOM dir, normalized like t1/t2/flair
         additional_modality_dirs=None,
         # Optional: name -> DICOM dir, not intensity-normalized (e.g. ADC)
@@ -107,6 +108,7 @@ if __name__ == "__main__":
         flair_file=skull_strip_followup_outdir / "flair_skullstripped.nii.gz",
         outdir=outdir_followup,
         cuda_device=args.cuda_device,
+        is_preop=False,
     )
 
     # Tissue segmentation

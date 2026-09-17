@@ -240,6 +240,7 @@ class DicomProcessor(BaseProcessor):
             dcm2niix_location=self.dcm2niix_location,
             perform_tissueseg=True,
             cuda_device=self.cuda_device,
+            is_preop=True,
             additional_modality_dirs=self.additional_modality_preop_dirs,
             additional_quantitative_modality_dirs=self.additional_quantitative_modality_preop_dirs,
         )
@@ -255,6 +256,7 @@ class DicomProcessor(BaseProcessor):
             dcm2niix_location=self.dcm2niix_location,
             perform_tissueseg=False,
             cuda_device=self.cuda_device,
+            is_preop=False,
             additional_modality_dirs=self.additional_modality_followup_dirs,
             additional_quantitative_modality_dirs=self.additional_quantitative_modality_followup_dirs,
         )
@@ -387,6 +389,7 @@ class NiftiProcessor(BaseProcessor):
             outdir=self.outdir_preop,
             perform_tissueseg=True,
             cuda_device=self.cuda_device,
+            is_preop=True,
             is_coregistered=self.is_coregistered,
             is_skull_stripped=self.is_skull_stripped,
             tumorseg_file=self.tumorseg_file,
@@ -404,6 +407,7 @@ class NiftiProcessor(BaseProcessor):
             outdir=self.outdir_followup,
             perform_tissueseg=False,
             cuda_device=self.cuda_device,
+            is_preop=False,
             is_coregistered=self.is_coregistered,
             is_skull_stripped=self.is_skull_stripped,
             tumorseg_file=self.recurrenceseg_file,
