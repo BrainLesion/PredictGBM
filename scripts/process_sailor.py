@@ -1,4 +1,6 @@
 import os
+import csv
+import time
 import json
 import shutil
 import argparse
@@ -8,18 +10,23 @@ import nibabel as nib
 import numpy as np
 from pathlib import Path
 from loguru import logger
+from brats import AdultGliomaPreAndPostTreatmentSegmenter
+from brats.constants import AdultGliomaPreAndPostTreatmentAlgorithms
 from predict_gbm.utils.parsing import PatientDataset
 from predict_gbm.utils.constants import (
     CONFIG_SCHEMA,
     CONFIG_STEP_REGISTER_RECURRENCE,
     LONGITUDINAL_AFFINE_SCHEMA,
+    LONGITUDINAL_DIR,
     LONGITUDINAL_DISP_SCHEMA,
     LONGITUDINAL_WARP_SCHEMA,
     MODALITY_STRIPPED_SCHEMA,
+    OUTPUT_BASE_SCHEMA,
     PathSchema,
     REGISTRATION_TRAFO_SCHEMA,
     TUMORSEG_SCHEMA,
     TISSUE_PBMAP_SCHEMA,
+    TUMOR_SEGMENTATION_FOLDER,
     RECURRENCE_SCHEMA,
 )
 from predict_gbm.preprocessing import (
@@ -28,7 +35,13 @@ from predict_gbm.preprocessing import (
     run_tissue_seg,
     register_recurrence,
 )
+from predict_gbm.preprocessing.norm_ss_coregistration import SUPPORTED_ATLASES
 from predict_gbm.preprocessing.dirac import warp_image_to_preop
+from predict_gbm.utils.utils import update_config
+
+# Atlas the modalities are registered to (and the tissue segmentation is based on). The
+# outputs in <outdir> are in this atlas space, so do not mix atlases within one outdir.
+DEFAULT_ATLAS = "sri24"
 
 # Modality keys as used in missing_modalities.json, mapped to the corresponding sailor.json exam key.
 MISSING_MODALITY_KEYS = {
@@ -38,22 +51,51 @@ MISSING_MODALITY_KEYS = {
     "flair": "flair",
 }
 
-# Radiotherapy dose map (Gy) per patient. Its voxel grid (and header) is that of the raw RT
-# planning MRI (one of the post-op exams, e.g. ses-03 for sub-01), but its content lies in
-# the world frame of the derivatives, i.e. MNI ICBM 2009c space (ONCOHabitats rigid+affine
-# registration). It is treated as an additional quantitative modality named "dose".
+# Radiotherapy dose map (Gy) per patient. Its voxel grid (and header) is that of a raw RT
+# planning MRI, but its content lies in the world frame of the derivatives, i.e. MNI ICBM
+# 2009c space (ONCOHabitats rigid+affine registration). It is treated as an additional
+# quantitative modality named "dose".
 DOSE_MAP_SCHEMA = PathSchema("{dose_map_dir}/{patient_id}/DoseMap.nii.gz")
 DOSE_MODALITY = "dose"
-# Max. deviation (mm) between the world-space bounding boxes of the dose map and an exam's
-# raw t1c for the exam to count as the planning MRI the dose map was resampled onto.
-DOSE_MAP_MATCH_TOLERANCE_MM = 10.0
-# Skull-stripped, MNI-space T1c of the derivatives, used to register the derivatives' MNI
-# frame (the frame the dose map content lies in) to the pipeline's atlas space. All sessions
-# of a patient share the MNI frame, so a fixed session is used.
+# Skull-stripped, MNI-space T1c of a derivatives session. The dose map is brought into the
+# pipeline atlas space of the "dose exam" (the first followup exam with a derivatives
+# counterpart, see find_dose_map_exam) by affinely registering the derivatives T1c of that
+# same visit to the exam's atlas-space t1c. Since the derivatives were registered to MNI
+# rigid+affine but the pipeline registers rigidly, this affine is patient specific.
 DOSE_MNI_T1C_SCHEMA = PathSchema("{dose_map_dir}/{patient_id}/{session}/T1c.nii.gz")
-DOSE_MNI_SESSION = "ses-03"
+# Table linking raw sessions to derivatives (MNI) sessions: columns subject, raw session,
+# mni session ("no" if the raw session has no derivatives counterpart).
+DOSE_RAW_MNI_LINK_SCHEMA = PathSchema("{dose_map_dir}/raw-mni-link.tsv")
 # Affine mapping the derivatives' MNI frame into the pipeline atlas space of an exam.
 DOSE_MNI_AFFINE_SCHEMA = REGISTRATION_TRAFO_SCHEMA / DOSE_MODALITY / "mni2009c_to_atlas.mat"
+# Treatment label of a derivatives session (CRT, TMZ, no, unknown), added to the session
+# labels table written to the output directory.
+TREATMENT_SCHEMA = PathSchema("{dose_map_dir}/{patient_id}/{session}/treatment.txt")
+SESSION_LABELS_FILENAME = "session_labels.tsv"
+
+# Intermediate files of the DIRAC longitudinal registration (initial displacement fields,
+# masks and the optimized field) that are removed after registration. The final transform
+# is kept as longitudinal_trafo.nii.gz (LONGITUDINAL_DISP_SCHEMA).
+DIRAC_INTERMEDIATE_PATTERNS = (
+    "dirac_infer_case_*.nii.gz",
+    "followup_to_preop_disp_voxel_optimized.nii.gz",
+)
+# Tissue probability maps co-transformed to preop space alongside t1c and flair.
+LONGITUDINAL_TISSUES = ("gm", "wm", "csf")
+
+# Alternative tumor segmentation of the postop exams with the BraTS 2024 post-treatment
+# algorithm (-brats24_postop). The BraTS25 pre-and-post algorithm used by the pipeline tends
+# to label early postop resection cavities as non-enhancing tumor core (label 1) instead of
+# resection cavity (label 4), which BraTS24_1 gets right. Stored next to the pipeline
+# outputs, in atlas space and warped to preop space with the exam's longitudinal transform.
+BRATS24_ALGORITHM = AdultGliomaPreAndPostTreatmentAlgorithms.BraTS24_1
+BRATS24_TUMORSEG_SCHEMA = (
+    OUTPUT_BASE_SCHEMA / TUMOR_SEGMENTATION_FOLDER / "tumor_seg_24_1.nii.gz"
+)
+BRATS24_RECURRENCE_SCHEMA = (
+    OUTPUT_BASE_SCHEMA / LONGITUDINAL_DIR / "recurrence_preop_24_1.nii.gz"
+)
+CONFIG_STEP_BRATS24_POSTOP = "run_brats24_postop"
 
 
 def resolve_modalities(exam: dict, missing: list) -> dict | None:
@@ -92,11 +134,20 @@ def resolve_modalities(exam: dict, missing: list) -> dict | None:
 
 
 def process_exam(
-    modalities: dict, outdir: Path, cuda_device: str, override: bool = False
+    modalities: dict,
+    outdir: Path,
+    cuda_device: str,
+    atlas: str = DEFAULT_ATLAS,
+    is_preop: bool = False,
+    override: bool = False,
 ) -> None:
     """
     Runs atlas registration/skull stripping, tumor segmentation and tissue segmentation for a single exam.
-    If override is True, all steps are rerun even if their outputs already exist.
+    The modalities are registered to the given atlas (see SUPPORTED_ATLASES), which is also used
+    for the atlas-based tissue segmentation. is_preop selects the pre-treatment branch of the
+    tumor segmentation (no resection cavity label); post-op and followup exams use the
+    post-treatment branch. If override is True, all steps are rerun even if their outputs
+    already exist.
     """
     outdir.mkdir(parents=True, exist_ok=True)
 
@@ -115,6 +166,7 @@ def process_exam(
             flair_file=modalities["flair"],
             skull_strip=True,
             outdir=outdir,
+            atlas=atlas,
             additional_quantitative_modalities=additional_quantitative_modalities,
         )
 
@@ -129,61 +181,115 @@ def process_exam(
             flair_file=MODALITY_STRIPPED_SCHEMA.format(base_dir=outdir, modality="flair"),
             outdir=outdir,
             cuda_device=cuda_device,
+            is_preop=is_preop,
         )
 
     tissueseg_files = [
         TISSUE_PBMAP_SCHEMA.format(base_dir=outdir, tissue=tissue)
         for tissue in ("gm", "wm", "csf")
     ]
-    #if all(f.exists() for f in tissueseg_files) and not override:
-    if False:
+    if all(f.exists() for f in tissueseg_files) and not override:
         logger.info(f"{outdir}: tissue segmentation already done, skipping.")
     else:
-        print("Tissue segmentation overiding old files by design")
         run_tissue_seg(
             t1_file=MODALITY_STRIPPED_SCHEMA.format(base_dir=outdir, modality="t1c"),
             outdir=outdir,
+            atlas=atlas,
         )
 
 
-def world_bbox(nifti_file: Path) -> np.ndarray:
-    """Returns the world-space (min, max) corners, shape (2, 3), of a nifti's voxel grid."""
-    img = nib.load(str(nifti_file))
-    shape = np.array(img.shape[:3]) - 1
-    corners = np.array(
-        [[i, j, k, 1.0] for i in (0, shape[0]) for j in (0, shape[1]) for k in (0, shape[2])]
-    )
-    world = (img.affine @ corners.T).T[:, :3]
-    return np.stack([world.min(axis=0), world.max(axis=0)])
-
-
-def find_dose_map_exam(dose_file: Path, exam_t1c_files: dict) -> str | None:
+def longitudinal_modalities(exam_outdir: Path) -> dict:
     """
-    Identifies the exam whose raw t1c grid the dose map was resampled onto, i.e. the RT
-    planning MRI, by matching world-space bounding boxes. Only the grid is matched; the dose
-    map content itself lies in the derivatives' MNI frame. exam_t1c_files maps exam dir_name
-    to the raw t1c path. Returns the dir_name of the best match, or None if no exam matches
-    within DOSE_MAP_MATCH_TOLERANCE_MM.
+    Additional modalities of an exam that register_recurrence co-transforms to preop space:
+    the skull-stripped flair and the gm/wm/csf tissue probability maps. Outputs are stored as
+    <exam_outdir>/longitudinal/<name>_warped_longitudinal.nii.gz.
     """
-    logger.warning(
-        f"Automatically determining the exam the dose map {dose_file} is aligned with by "
-        "matching world-space bounding boxes of the raw t1c images; verify the match."
-    )
-    dose_bbox = world_bbox(dose_file)
-    best_name, best_dist = None, np.inf
-    for dir_name, t1c_file in exam_t1c_files.items():
-        dist = np.abs(world_bbox(t1c_file) - dose_bbox).max()
-        logger.debug(f"{dir_name}: dose map bbox deviation {dist:.1f} mm.")
-        if dist < best_dist:
-            best_name, best_dist = dir_name, dist
-    if best_dist > DOSE_MAP_MATCH_TOLERANCE_MM:
-        logger.warning(
-            f"No exam grid matches the dose map {dose_file} "
-            f"(closest: {best_name} with {best_dist:.1f} mm deviation)."
+    modalities = {
+        "flair": MODALITY_STRIPPED_SCHEMA.format(base_dir=exam_outdir, modality="flair")
+    }
+    for tissue in LONGITUDINAL_TISSUES:
+        modalities[f"{tissue}_pbmap"] = TISSUE_PBMAP_SCHEMA.format(
+            base_dir=exam_outdir, tissue=tissue
         )
-        return None
-    logger.info(f"Dose map matched to exam {best_name} ({best_dist:.1f} mm deviation).")
-    return best_name
+    return modalities
+
+
+def remove_longitudinal_intermediates(exam_outdir: Path) -> None:
+    """Deletes the DIRAC intermediate files (DIRAC_INTERMEDIATE_PATTERNS) of an exam."""
+    longitudinal_dir = RECURRENCE_SCHEMA.format(base_dir=exam_outdir).parent
+    for pattern in DIRAC_INTERMEDIATE_PATTERNS:
+        for f in longitudinal_dir.glob(pattern):
+            f.unlink()
+            logger.debug(f"Removed longitudinal intermediate {f}.")
+
+
+def write_session_labels(
+    session_labels_file: Path, raw_mni_link: dict, dose_map_dir: str, outfile: Path
+) -> None:
+    """
+    Copies session_labels.tsv to outfile with an additional column treatment_label, read from
+    the derivatives treatment.txt of the session linked to each raw session via raw_mni_link
+    ({(patient_id, raw session): derivatives session}). Sessions without a derivatives
+    counterpart or without a treatment.txt get an empty label.
+    """
+    with open(session_labels_file, newline="") as f:
+        reader = csv.DictReader(f, delimiter="\t")
+        fieldnames = list(reader.fieldnames) + ["treatment_label"]
+        rows = list(reader)
+    n_labeled = 0
+    for row in rows:
+        mni_session = raw_mni_link.get((row["subject"], row["session"]))
+        label = ""
+        if mni_session is not None:
+            treatment_file = TREATMENT_SCHEMA.format(
+                dose_map_dir=dose_map_dir, patient_id=row["subject"], session=mni_session
+            )
+            if treatment_file.exists():
+                label = treatment_file.read_text().strip()
+        row["treatment_label"] = label
+        n_labeled += bool(label)
+    with open(outfile, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter="\t", lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+    logger.info(
+        f"Wrote {outfile} ({len(rows)} sessions, {n_labeled} with a treatment label)."
+    )
+
+
+def load_raw_mni_link(link_file: Path) -> dict:
+    """
+    Reads raw-mni-link.tsv and returns {(patient_id, raw dir_name): derivatives session} for
+    the raw sessions that have a derivatives counterpart.
+    """
+    link = {}
+    with open(link_file, newline="") as f:
+        for row in csv.DictReader(f, delimiter="\t"):
+            if row["mni session"] != "no":
+                link[(row["subject"], row["raw session"])] = row["mni session"]
+    return link
+
+
+def find_dose_map_exam(
+    patient_id: str, exam_outdirs: dict, raw_mni_link: dict
+) -> tuple[str, str] | None:
+    """
+    Selects the exam the dose map is registered through: the first (by dir_name) processed
+    followup exam that has a derivatives counterpart in raw_mni_link. The dose map content
+    lies in the derivatives' MNI frame shared by all sessions, so any exam would do; the
+    first followup is closest in time to the radiotherapy. exam_outdirs maps dir_name to
+    (outdir, timepoint). Returns (dir_name, derivatives session) or None if no exam qualifies.
+    """
+    for dir_name in sorted(exam_outdirs):
+        _, timepoint = exam_outdirs[dir_name]
+        # dir_name may be a Path (PatientDataset yields Paths); the link table uses strings.
+        mni_session = raw_mni_link.get((patient_id, str(dir_name)))
+        if timepoint == "followup" and mni_session is not None:
+            logger.info(
+                f"{patient_id}: dose map exam {dir_name} (derivatives session {mni_session})."
+            )
+            return dir_name, mni_session
+    return None
 
 
 def register_dose_map(
@@ -199,9 +305,9 @@ def register_dose_map(
     exam in exam_outdir, and then to preop space using the exam's longitudinal
     (followup-to-preop) transform from register_recurrence.
     The MNI-to-atlas affine is obtained by registering the derivatives' skull-stripped MNI T1c
-    (mni_t1c_file) to the exam's skull-stripped atlas t1c. It is applied to the dose map in
-    world coordinates, so the dose map's own (raw planning MRI) voxel grid is resampled onto
-    the atlas grid in a single interpolation. No brain masking is applied.
+    of the same visit (mni_t1c_file) to the exam's skull-stripped atlas t1c. It is applied to
+    the dose map in world coordinates, so the dose map's own (raw planning MRI) voxel grid is
+    resampled onto the atlas grid in a single interpolation. No brain masking is applied.
     Outputs: <exam_outdir>/skull_stripped/dose/mni2009c_to_atlas.mat (the affine),
     <exam_outdir>/skull_stripped/dose_skullstripped.nii.gz (atlas space) and
     <exam_outdir>/longitudinal/dose_warped_longitudinal.nii.gz (preop space).
@@ -258,32 +364,110 @@ def register_dose_map(
         logger.info(f"{exam_outdir}: dose map preop registration already done, skipping.")
         return
 
+    warp_to_preop(
+        image_file=dose_atlas_file,
+        exam_outdir=exam_outdir,
+        preop_outdir=preop_outdir,
+        out_file=dose_preop_file,
+        label_map=False,
+    )
+    logger.info(f"Saved preop-space dose map to {dose_preop_file}.")
+
+
+def warp_to_preop(
+    image_file: Path,
+    exam_outdir: Path,
+    preop_outdir: Path,
+    out_file: Path,
+    label_map: bool = False,
+) -> None:
+    """
+    Warps an atlas-space image of the exam in exam_outdir to preop space with the exam's
+    longitudinal (followup-to-preop) transform from register_recurrence, read from the
+    exam's config to pick the transform type (DIRAC displacement field, SyN warp or affine).
+    Label maps are warped with nearest neighbour interpolation, images linearly.
+    """
     with open(CONFIG_SCHEMA.format(base_dir=exam_outdir), "r") as f:
         algorithm = json.load(f)[CONFIG_STEP_REGISTER_RECURRENCE]["registration_algorithm"]
     t1c_pre_file = MODALITY_STRIPPED_SCHEMA.format(base_dir=preop_outdir, modality="t1c")
 
     if algorithm == "dirac":
         warp_image_to_preop(
-            image_file=dose_atlas_file,
+            image_file=image_file,
             reference_file=t1c_pre_file,
             disp_field_file=LONGITUDINAL_DISP_SCHEMA.format(base_dir=exam_outdir),
-            out_file=dose_preop_file,
+            out_file=out_file,
             device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-            mode="bilinear",
+            mode="nearest" if label_map else "bilinear",
         )
     else:
         trafo_schema = (
             LONGITUDINAL_DISP_SCHEMA if algorithm == "syn" else LONGITUDINAL_AFFINE_SCHEMA
         )
-        dose_preop = ants.apply_transforms(
+        warped = ants.apply_transforms(
             fixed=ants.image_read(str(t1c_pre_file)),
-            moving=ants.image_read(str(dose_atlas_file)),
+            moving=ants.image_read(str(image_file)),
             transformlist=[str(trafo_schema.format(base_dir=exam_outdir))],
-            interpolator="linear",
+            interpolator="nearestNeighbor" if label_map else "linear",
             defaultvalue=0,
         )
-        ants.image_write(dose_preop, str(dose_preop_file))
-    logger.info(f"Saved preop-space dose map to {dose_preop_file}.")
+        ants.image_write(warped, str(out_file))
+
+
+def segment_postop_brats24(
+    exam_outdir: Path,
+    preop_outdir: Path,
+    cuda_device: str,
+    override: bool = False,
+) -> None:
+    """
+    Segments a postop exam with the BraTS 2024 post-treatment algorithm (BRATS24_ALGORITHM)
+    on the exam's skull-stripped atlas-space modalities and warps the result to preop space
+    with the exam's longitudinal transform. The pipeline's own segmentation (tumor_seg.nii.gz,
+    recurrence_preop.nii.gz) is left untouched.
+    Outputs: <exam_outdir>/tumor_segmentation/tumor_seg_24_1.nii.gz (atlas space) and
+    <exam_outdir>/longitudinal/recurrence_preop_24_1.nii.gz (preop space).
+    """
+    seg_file = BRATS24_TUMORSEG_SCHEMA.format(base_dir=exam_outdir)
+    if seg_file.exists() and not override:
+        logger.info(f"{exam_outdir}: BraTS24 postop segmentation already done, skipping.")
+    else:
+        start_time = time.time()
+        logger.info(f"{exam_outdir}: starting {BRATS24_ALGORITHM.value} postop segmentation.")
+        segmenter = AdultGliomaPreAndPostTreatmentSegmenter(
+            algorithm=BRATS24_ALGORITHM,
+            cuda_devices=cuda_device,
+        )
+        seg_file.parent.mkdir(parents=True, exist_ok=True)
+        segmenter.infer_single(
+            t1n=str(MODALITY_STRIPPED_SCHEMA.format(base_dir=exam_outdir, modality="t1")),
+            t1c=str(MODALITY_STRIPPED_SCHEMA.format(base_dir=exam_outdir, modality="t1c")),
+            t2w=str(MODALITY_STRIPPED_SCHEMA.format(base_dir=exam_outdir, modality="t2")),
+            t2f=str(MODALITY_STRIPPED_SCHEMA.format(base_dir=exam_outdir, modality="flair")),
+            output_file=str(seg_file),
+        )
+        update_config(
+            exam_outdir,
+            CONFIG_STEP_BRATS24_POSTOP,
+            {"algorithm": BRATS24_ALGORITHM.value, "timepoint": "postop"},
+        )
+        logger.info(
+            f"{exam_outdir}: finished BraTS24 postop segmentation in "
+            f"{time.time() - start_time:.2f} seconds. Saved output to {seg_file}."
+        )
+
+    recurrence_file = BRATS24_RECURRENCE_SCHEMA.format(base_dir=exam_outdir)
+    if recurrence_file.exists() and not override:
+        logger.info(f"{exam_outdir}: BraTS24 preop-space segmentation already done, skipping.")
+        return
+    warp_to_preop(
+        image_file=seg_file,
+        exam_outdir=exam_outdir,
+        preop_outdir=preop_outdir,
+        out_file=recurrence_file,
+        label_map=True,
+    )
+    logger.info(f"{exam_outdir}: saved preop-space BraTS24 segmentation to {recurrence_file}.")
 
 
 def visualize_dose_maps(outdir_root: Path, pdf_file: Path, rows_per_page: int = 5) -> None:
@@ -345,14 +529,21 @@ def visualize_dose_maps(outdir_root: Path, pdf_file: Path, rows_per_page: int = 
 
 
 if __name__ == "__main__":
-    # Example:
+    # Full processing (skull stripping/atlas registration, tumor + tissue segmentation,
+    # longitudinal registration and dose maps) in one call; steps with existing outputs are
+    # skipped unless -override is given:
     # nohup python -u scripts/process_sailor.py -cuda_device 0 > tmp_process_sailor.out 2>&1 &
+    # Same, but into a separate directory with a different atlas:
+    # python -u scripts/process_sailor.py -cuda_device 0 -atlas sri24 -outdir /mnt/Drive4/lucas/SAILOR/processed_sri24
     # Only (re)run the dose map step for a single patient:
     # python -u scripts/process_sailor.py -cuda_device 0 -patients sub-01 -dose_only
     # Only write the dose map check pdf (existing dose outputs are skipped, not recomputed):
     # python -u scripts/process_sailor.py -dose_only -visualize_dose
     # Recompute the followup-to-preop registrations (and the preop-space dose maps) only:
     # python -u scripts/process_sailor.py -cuda_device 0 -patients sub-01 -longitudinal_registration
+    # Additionally segment the postop exams with the BraTS 2024 post-treatment algorithm and
+    # warp the result to preop space (tumor_seg_24_1 / recurrence_preop_24_1, see BRATS24_*):
+    # nohup python -u scripts/process_sailor.py -cuda_device 0 -brats24_postop > tmp_process_sailor_brats24.out 2>&1 &
     parser = argparse.ArgumentParser()
     parser.add_argument("-cuda_device", type=str, default="0", help="GPU id to run on.")
     parser.add_argument(
@@ -368,10 +559,24 @@ if __name__ == "__main__":
         help="Path to the json listing missing modalities per exam.",
     )
     parser.add_argument(
+        "-session_labels_tsv",
+        type=str,
+        default="/mnt/Drive4/lucas/SAILOR/session_labels.tsv",
+        help="Session labels table; copied to <outdir> with an added treatment_label column.",
+    )
+    parser.add_argument(
         "-outdir",
         type=str,
         default="/mnt/Drive4/lucas/SAILOR/processed",
         help="Directory to save processed output to.",
+    )
+    parser.add_argument(
+        "-atlas",
+        type=str,
+        default=DEFAULT_ATLAS,
+        choices=SUPPORTED_ATLASES,
+        help="Atlas to register the modalities to. All outputs in -outdir must use the same "
+        "atlas; use a fresh -outdir (or -override) when changing it.",
     )
     parser.add_argument(
         "-dose_map_dir",
@@ -387,13 +592,6 @@ if __name__ == "__main__":
         help="Patient ids to process (e.g. sub-01). Processes all patients if omitted.",
     )
     parser.add_argument(
-        "-dose_exam",
-        type=str,
-        default=None,
-        help="Exam dir_name (e.g. ses-02) whose transforms to use for the dose map, "
-        "bypassing the automatic bounding box match. Only meaningful with a single patient.",
-    )
-    parser.add_argument(
         "-dose_only",
         action="store_true",
         help="Only run the dose map registration, using existing outputs of the other steps.",
@@ -403,8 +601,19 @@ if __name__ == "__main__":
         action="store_true",
         help="Only recompute the longitudinal (postop/followup t1c to preop) registration of "
         "every processed postop/followup exam, overwriting existing results, and apply the new "
-        "transform to the modalities this script warps to preop space (t1c, tumor segmentation "
-        "and dose map). Existing outputs of the other steps are reused.",
+        "transform to the modalities this script warps to preop space (t1c, flair, tissue "
+        "probability maps, tumor segmentation and dose map). Existing outputs of the other "
+        "steps are reused.",
+    )
+    parser.add_argument(
+        "-brats24_postop",
+        "--brats24_postop",
+        action="store_true",
+        help="Only segment the postop exams (session label 'postop') with the BraTS 2024 "
+        "post-treatment algorithm, saved as tumor_segmentation/tumor_seg_24_1.nii.gz, and "
+        "warp the result to preop space with the existing longitudinal transform, saved as "
+        "longitudinal/recurrence_preop_24_1.nii.gz. The pipeline's own segmentations are kept; "
+        "existing outputs of this step are skipped unless -override is given.",
     )
     parser.add_argument(
         "-visualize_dose",
@@ -421,13 +630,18 @@ if __name__ == "__main__":
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.cuda_device
     # Modes reusing the existing per-exam outputs (skull stripping, tumor/tissue segmentation).
-    reuse_exam_outputs = args.dose_only or args.longitudinal_registration
+    reuse_exam_outputs = (
+        args.dose_only or args.longitudinal_registration or args.brats24_postop
+    )
 
     outdir_root = Path(args.outdir)
     outdir_root.mkdir(parents=True, exist_ok=True)
 
     with open(args.missing_modalities_json, "r") as f:
         missing_modalities = json.load(f)
+    raw_mni_link = load_raw_mni_link(
+        DOSE_RAW_MNI_LINK_SCHEMA.format(dose_map_dir=args.dose_map_dir)
+    )
 
     dataset = PatientDataset()
     dataset.load(args.sailor_json)
@@ -437,8 +651,23 @@ if __name__ == "__main__":
         patient_id = patient["patient_id"]
         if args.patients is not None and patient_id not in args.patients:
             continue
+        # Patients need a usable preop and postop exam (t1c + t2/flair resolvable), the
+        # longitudinal outputs are defined relative to both; sub-06 and sub-25 have no postop.
+        usable_timepoints = {
+            exam["timepoint"]
+            for exam in patient
+            if resolve_modalities(
+                exam, missing_modalities.get(f"{patient_id}/{exam['dir_name']}", [])
+            )
+            is not None
+        }
+        missing_timepoints = [t for t in ("preop", "postop") if t not in usable_timepoints]
+        if missing_timepoints:
+            logger.warning(
+                f"{patient_id}: no usable {' and '.join(missing_timepoints)} exam, skipping patient."
+            )
+            continue
         exam_outdirs = {}  # dir_name -> (outdir, timepoint)
-        exam_t1c_files = {}  # dir_name -> raw t1c path (native frame of the exam)
 
         for exam in patient:
             dir_name = exam["dir_name"]
@@ -455,15 +684,20 @@ if __name__ == "__main__":
             if reuse_exam_outputs:
                 if MODALITY_STRIPPED_SCHEMA.format(base_dir=exam_outdir, modality="t1c").exists():
                     exam_outdirs[dir_name] = (exam_outdir, exam["timepoint"])
-                    exam_t1c_files[dir_name] = Path(modalities["t1c"])
                 else:
                     logger.warning(f"{patient_id}/{dir_name}: not processed yet, skipping exam.")
                 continue
 
             try:
-                process_exam(modalities, exam_outdir, args.cuda_device, args.override)
+                process_exam(
+                    modalities=modalities,
+                    outdir=exam_outdir,
+                    cuda_device=args.cuda_device,
+                    atlas=args.atlas,
+                    is_preop=exam["timepoint"] == "preop",
+                    override=args.override,
+                )
                 exam_outdirs[dir_name] = (exam_outdir, exam["timepoint"])
-                exam_t1c_files[dir_name] = Path(modalities["t1c"])
             except Exception:
                 logger.exception(f"{patient_id}/{dir_name}: processing failed, skipping.")
 
@@ -476,6 +710,29 @@ if __name__ == "__main__":
             )
             continue
         preop_outdir = preop_entries[0]
+
+        if args.brats24_postop:
+            for dir_name, (exam_outdir, timepoint) in exam_outdirs.items():
+                if timepoint != "postop":
+                    continue
+                if not RECURRENCE_SCHEMA.format(base_dir=exam_outdir).exists():
+                    logger.warning(
+                        f"{patient_id}/{dir_name}: no longitudinal registration available, "
+                        "skipping BraTS24 postop segmentation."
+                    )
+                    continue
+                try:
+                    segment_postop_brats24(
+                        exam_outdir=exam_outdir,
+                        preop_outdir=preop_outdir,
+                        cuda_device=args.cuda_device,
+                        override=args.override,
+                    )
+                except Exception:
+                    logger.exception(
+                        f"{patient_id}/{dir_name}: BraTS24 postop segmentation failed, skipping."
+                    )
+            continue
 
         for dir_name, (exam_outdir, timepoint) in exam_outdirs.items():
             if timepoint not in ("postop", "followup"):
@@ -502,38 +759,34 @@ if __name__ == "__main__":
                     ),
                     recurrence_seg_file=TUMORSEG_SCHEMA.format(base_dir=exam_outdir),
                     outdir=exam_outdir,
+                    additional_modalities=longitudinal_modalities(exam_outdir),
                 )
+                remove_longitudinal_intermediates(exam_outdir)
             except Exception:
                 logger.exception(
                     f"{patient_id}/{dir_name}: recurrence registration failed, skipping."
                 )
 
-        # Dose map: derivatives MNI frame -> atlas space of the planning exam -> preop space
+        # Dose map: derivatives MNI frame -> atlas space of the dose exam -> preop space
         dose_file = DOSE_MAP_SCHEMA.format(
             dose_map_dir=args.dose_map_dir, patient_id=patient_id
         )
         if not dose_file.exists():
             logger.warning(f"{patient_id}: no dose map found at {dose_file}, skipping.")
             continue
+        dose_match = find_dose_map_exam(patient_id, exam_outdirs, raw_mni_link)
+        if dose_match is None:
+            logger.warning(
+                f"{patient_id}: no processed followup exam with a derivatives counterpart, "
+                "skipping dose map registration."
+            )
+            continue
+        dose_exam, mni_session = dose_match
         mni_t1c_file = DOSE_MNI_T1C_SCHEMA.format(
-            dose_map_dir=args.dose_map_dir, patient_id=patient_id, session=DOSE_MNI_SESSION
+            dose_map_dir=args.dose_map_dir, patient_id=patient_id, session=mni_session
         )
         if not mni_t1c_file.exists():
             logger.warning(f"{patient_id}: no MNI T1c found at {mni_t1c_file}, skipping.")
-            continue
-        if args.dose_exam is not None:
-            if Path(args.dose_exam) not in exam_outdirs:
-                logger.warning(
-                    f"{patient_id}: forced dose exam {args.dose_exam} not among processed "
-                    f"exams {sorted(exam_outdirs)}, skipping."
-                )
-                continue
-            logger.warning(f"{patient_id}: forcing dose map exam {args.dose_exam}.")
-            dose_exam = Path(args.dose_exam)
-        else:
-            dose_exam = find_dose_map_exam(dose_file, exam_t1c_files)
-        if dose_exam is None:
-            logger.warning(f"{patient_id}: dose map matches no processed exam, skipping.")
             continue
         dose_outdir, dose_timepoint = exam_outdirs[dose_exam]
         if dose_timepoint != "preop" and not RECURRENCE_SCHEMA.format(
@@ -555,6 +808,13 @@ if __name__ == "__main__":
             )
         except Exception:
             logger.exception(f"{patient_id}/{dose_exam}: dose map registration failed.")
+
+    write_session_labels(
+        session_labels_file=Path(args.session_labels_tsv),
+        raw_mni_link=raw_mni_link,
+        dose_map_dir=args.dose_map_dir,
+        outfile=outdir_root / SESSION_LABELS_FILENAME,
+    )
 
     if args.visualize_dose:
         visualize_dose_maps(outdir_root, outdir_root / "dose_maps.pdf")

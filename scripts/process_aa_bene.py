@@ -1,9 +1,10 @@
 import os
+import ants
 import argparse
 import numpy as np
 import nibabel as nib
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
 from loguru import logger
 from scipy.ndimage import binary_fill_holes
 from predict_gbm.utils.constants import (
@@ -11,7 +12,9 @@ from predict_gbm.utils.constants import (
     MODALITY_STRIPPED_SCHEMA,
     MODEL_OUTPUT_DIR,
     MODEL_PLAN_SCHEMA,
+    OUTPUT_BASE_SCHEMA,
     PREDICTION_OUTPUT_SCHEMA,
+    REGISTRATION_TRAFO_SCHEMA,
     SKULL_STRIP_FOLDER,
     STANDARD_PLAN_SCHEMA,
     TISSUE_PBMAP_SCHEMA,
@@ -47,8 +50,41 @@ DEFAULT_GROWTH_MODEL_PATHS = [
     str(GROWTH_MODEL_DIR / "gliodil.tar"),
 ]
 MODEL_ID_OVERRIDES = {"unet1": "unet"}
+# Atlas the exam is registered to. The unet docker crops its output to the BraTS grid
+# (240x240x155) and fails on any other shape, so -unet registers to the sri24 atlas, which
+# has that grid, predicts with UNET_GROWTH_MODEL_PATHS and writes to <outdir>/UNET_SUBFOLDER.
+DEFAULT_ATLAS = "brats_mni152"
+UNET_ATLAS = "sri24"
+UNET_SUBFOLDER = "sri24"
+UNET_GROWTH_MODEL_PATHS = [str(GROWTH_MODEL_DIR / "unet1.tar")]
 # Absolute tolerance for comparing output affines to the reference.
 AFFINE_ATOL = 1e-3
+
+# Raw input modalities whose grid the predictions and plans are transformed back to (patient
+# space), see transform_to_patient_space. Every modality of the exam is supported.
+PATIENT_SPACE_MODALITIES = ("t1c",)
+PATIENT_SPACE_FOLDER = "patient_space"
+PATIENT_SPACE_SCHEMA = (
+    OUTPUT_BASE_SCHEMA / PATIENT_SPACE_FOLDER / "{modality}" / "{name}.nii.gz"
+)
+# Growth model outputs transformed to patient space as (output, schema, interpolator,
+# pixeltype); the file name is <model id>_<output>.nii.gz.
+MODEL_OUTPUTS = (
+    ("pred", PREDICTION_OUTPUT_SCHEMA, "linear", "float"),
+    ("plan", MODEL_PLAN_SCHEMA, "nearestNeighbor", "unsigned char"),
+)
+# Segmentations transformed to patient space with -transform_segmentations as (schema,
+# schema kwargs besides base_dir, interpolator, pixeltype); the file name is the one of the
+# atlas space file. Label maps and masks use nearest neighbors, the tissue probability maps
+# linear interpolation.
+SEGMENTATION_OUTPUTS = (
+    (TUMORSEG_SCHEMA, {}, "nearestNeighbor", "unsigned char"),
+    (STANDARD_PLAN_SCHEMA, {}, "nearestNeighbor", "unsigned char"),
+    (BRAIN_MASK_SCHEMA, {}, "nearestNeighbor", "unsigned char"),
+    (TISSUE_PBMAP_SCHEMA, {"tissue": "gm"}, "linear", "float"),
+    (TISSUE_PBMAP_SCHEMA, {"tissue": "wm"}, "linear", "float"),
+    (TISSUE_PBMAP_SCHEMA, {"tissue": "csf"}, "linear", "float"),
+)
 
 
 def find_modality_files(data_dir: Path) -> Dict[str, Path]:
@@ -73,8 +109,10 @@ def find_modality_files(data_dir: Path) -> Dict[str, Path]:
     return modality_files
 
 
-def preprocess(modality_files: Dict[str, Path], outdir: Path, override: bool) -> None:
-    """Normalization, skull stripping and atlas co-registration of all modalities."""
+def preprocess(
+    modality_files: Dict[str, Path], outdir: Path, atlas: str, override: bool
+) -> None:
+    """Normalization, skull stripping and co-registration of all modalities to the atlas."""
     if MODALITY_STRIPPED_SCHEMA.format(base_dir=outdir, modality="t1c").exists() and not override:
         logger.info(f"{outdir}: skull stripping already done, skipping.")
         return
@@ -91,6 +129,7 @@ def preprocess(modality_files: Dict[str, Path], outdir: Path, override: bool) ->
         skull_strip=True,
         outdir=outdir,
         additional_quantitative_modalities=additional_quantitative_modalities,
+        atlas=atlas,
     )
 
 
@@ -109,8 +148,8 @@ def segment_tumor(outdir: Path, cuda_device: str, override: bool) -> None:
     )
 
 
-def segment_tissue(outdir: Path, override: bool) -> None:
-    """Tissue (gm/wm/csf) probability maps based on the skull stripped t1c."""
+def segment_tissue(outdir: Path, atlas: str, override: bool) -> None:
+    """Tissue (gm/wm/csf) probability maps of the atlas registered to the skull stripped t1c."""
     tissueseg_files = [
         TISSUE_PBMAP_SCHEMA.format(base_dir=outdir, tissue=tissue)
         for tissue in ("gm", "wm", "csf")
@@ -121,6 +160,7 @@ def segment_tissue(outdir: Path, override: bool) -> None:
     run_tissue_seg(
         t1_file=MODALITY_STRIPPED_SCHEMA.format(base_dir=outdir, modality="t1c"),
         outdir=outdir,
+        atlas=atlas,
     )
 
 
@@ -320,9 +360,114 @@ def check_output_affines(outdir: Path) -> None:
     )
 
 
+def transform_file_to_raw_grid(
+    infile: Path,
+    outfile: Path,
+    raw_file: Path,
+    raw_img_ants: ants.ANTsImage,
+    transform_files: List[str],
+    interpolator: str,
+    pixeltype: str,
+) -> None:
+    """
+    Transforms infile from the atlas frame to the grid of raw_file by applying the inverse
+    of transform_files (see transform_to_patient_space) and saves it as outfile with the
+    given ANTs interpolator and pixeltype. Raises if the output does not have the shape and
+    affine of raw_file.
+    """
+    transformed = ants.apply_transforms(
+        fixed=raw_img_ants,
+        moving=ants.image_read(str(infile)),
+        transformlist=transform_files,
+        whichtoinvert=[True] * len(transform_files),
+        interpolator=interpolator,
+        defaultvalue=0,
+    )
+    outfile.parent.mkdir(parents=True, exist_ok=True)
+    ants.image_write(transformed.clone(pixeltype), str(outfile))
+
+    raw_img = nib.load(str(raw_file))
+    out_img = nib.load(str(outfile))
+    if out_img.shape != raw_img.shape or not np.allclose(
+        out_img.affine, raw_img.affine, atol=AFFINE_ATOL
+    ):
+        raise ValueError(
+            f"{outfile}: shape {out_img.shape} / affine translation {out_img.affine[:3, 3]} "
+            f"differ from {raw_file} ({raw_img.shape} / {raw_img.affine[:3, 3]})."
+        )
+
+
+def transform_to_patient_space(
+    outdir: Path,
+    modality_files: Dict[str, Path],
+    model_ids: List[str],
+    transform_segmentations: bool = False,
+    modalities: Tuple[str, ...] = PATIENT_SPACE_MODALITIES,
+) -> None:
+    """
+    Transforms the growth model predictions and plans (MODEL_OUTPUTS) and, if
+    transform_segmentations is set, the tumor and tissue segmentations, brain mask and
+    standard plan (SEGMENTATION_OUTPUTS) from the atlas frame back to the grid of the raw
+    input modalities (patient space) by inverting the affine transforms that
+    norm_ss_coregister saved in skull_stripped/<modality>/: for the center modality t1c the
+    atlas registration (2_M_atlas__t1c.mat), for every other modality additionally its
+    co-registration to t1c (1_M_co__t1c__<modality>.mat) and its correction registration in
+    atlas space (3_M_atlas_corrected__t1c__<modality>.mat). ANTs applies the transform list
+    front to back to the points of the fixed (raw) image, so the sorted matrices, all inverted,
+    map a raw voxel to its position in the atlas frame. Continuous images are interpolated
+    linearly, label maps and masks with nearest neighbors; the outputs have the shape and
+    affine of the raw modality (verified). Outputs: patient_space/<modality>/<id>_pred.nii.gz,
+    <id>_plan.nii.gz and the segmentations under their atlas space file names. Missing
+    inputs (e.g. of failed models) are logged and skipped.
+    """
+    for modality in modalities:
+        if modality not in modality_files:
+            logger.warning(f"{outdir}: no raw {modality} in the exam, skipping patient space.")
+            continue
+        raw_file = modality_files[modality]
+        transform_dir = REGISTRATION_TRAFO_SCHEMA.format(base_dir=outdir) / modality
+        transform_files = [str(f) for f in sorted(transform_dir.glob("*.mat"))]
+        if not transform_files:
+            raise FileNotFoundError(
+                f"{outdir}: no registration transform of {modality} found in {transform_dir}."
+            )
+        logger.info(
+            f"{outdir}: transforming to the raw {modality} grid with the inverse of "
+            f"{[Path(f).name for f in transform_files]}."
+        )
+        raw_img_ants = ants.image_read(str(raw_file))
+
+        # (infile, output name, interpolator, pixeltype)
+        jobs = [
+            (
+                infile_schema.format(base_dir=outdir, algo_id=model_id),
+                f"{model_id}_{output}",
+                interpolator,
+                pixeltype,
+            )
+            for model_id in model_ids
+            for output, infile_schema, interpolator, pixeltype in MODEL_OUTPUTS
+        ]
+        if transform_segmentations:
+            for infile_schema, schema_kwargs, interpolator, pixeltype in SEGMENTATION_OUTPUTS:
+                infile = infile_schema.format(base_dir=outdir, **schema_kwargs)
+                name = infile.name[: -len(".nii.gz")]
+                jobs.append((infile, name, interpolator, pixeltype))
+        for infile, name, interpolator, pixeltype in jobs:
+            if not infile.exists():
+                logger.warning(f"{outdir}: {infile} does not exist, skipping.")
+                continue
+            outfile = PATIENT_SPACE_SCHEMA.format(base_dir=outdir, modality=modality, name=name)
+            transform_file_to_raw_grid(
+                infile, outfile, raw_file, raw_img_ants, transform_files, interpolator, pixeltype
+            )
+            logger.info(f"{outdir}: saved {name} in {modality} space to {outfile}.")
+
+
 if __name__ == "__main__":
     # Example:
     # nohup python -u scripts/process_aa_bene.py -cuda_device 0 > tmp_process_aa_bene.out 2>&1 &
+    # nohup python -u scripts/process_aa_bene.py -cuda_device 0 -unet > tmp_process_aa_bene_unet.out 2>&1 &
     parser = argparse.ArgumentParser()
     parser.add_argument("-cuda_device", type=str, default="0", help="GPU id to run on.")
     parser.add_argument(
@@ -341,11 +486,28 @@ if __name__ == "__main__":
         "-growth_models",
         type=str,
         nargs="*",
-        default=DEFAULT_GROWTH_MODEL_PATHS,
+        default=None,
         help=(
             "Growth model docker images (*.tar) to predict with. The file stem is used as "
             "model id unless it is renamed by MODEL_ID_OVERRIDES. Pass without arguments to "
-            "skip the prediction."
+            f"skip the prediction. Defaults to {DEFAULT_GROWTH_MODEL_PATHS}, with -unet to "
+            f"{UNET_GROWTH_MODEL_PATHS}."
+        ),
+    )
+    parser.add_argument(
+        "-unet",
+        action="store_true",
+        help=(
+            f"Run the pipeline on the {UNET_ATLAS} atlas (BraTS grid required by the unet "
+            f"docker) with the unet growth model, writing to <outdir>/{UNET_SUBFOLDER}."
+        ),
+    )
+    parser.add_argument(
+        "-transform_segmentations",
+        action="store_true",
+        help=(
+            "Also transform the tumor and tissue segmentations, brain mask and standard plan "
+            f"to patient space (see {PATIENT_SPACE_FOLDER}/)."
         ),
     )
     parser.add_argument(
@@ -358,22 +520,36 @@ if __name__ == "__main__":
     os.environ["CUDA_VISIBLE_DEVICES"] = args.cuda_device
 
     outdir = Path(args.outdir)
+    atlas = DEFAULT_ATLAS
+    growth_models = args.growth_models
+    if args.unet:
+        outdir = outdir / UNET_SUBFOLDER
+        atlas = UNET_ATLAS
+        if growth_models is None:
+            growth_models = UNET_GROWTH_MODEL_PATHS
+    elif growth_models is None:
+        growth_models = DEFAULT_GROWTH_MODEL_PATHS
     outdir.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Registering to the {atlas} atlas, output in {outdir}.")
     modality_files = find_modality_files(Path(args.data_dir))
-    growth_model_paths = resolve_growth_models(args.growth_models)
+    growth_model_paths = resolve_growth_models(growth_models)
     logger.info(f"Predicting with growth models {list(growth_model_paths)}.")
 
     # i) atlas co-registration, skull stripping, normalization
-    preprocess(modality_files, outdir, args.override)
+    preprocess(modality_files, outdir, atlas, args.override)
     # ii) tumor segmentation and standard plan
     segment_tumor(outdir, args.cuda_device, args.override)
     create_preop_standard_plan(outdir)
     # iii) tissue segmentation
-    segment_tissue(outdir, args.override)
+    segment_tissue(outdir, atlas, args.override)
     # Inputs of the growth models must share the atlas frame before predicting.
     check_output_affines(outdir)
     # iv) growth model predictions and plans
     predict_growth(outdir, growth_model_paths, args.cuda_device, args.override)
     check_output_affines(outdir)
+    # v) predictions, plans (and segmentations) back to the patient space of the raw modalities
+    transform_to_patient_space(
+        outdir, modality_files, list(growth_model_paths), args.transform_segmentations
+    )
 
     logger.info(f"Finished processing {args.data_dir}, output in {outdir}.")
