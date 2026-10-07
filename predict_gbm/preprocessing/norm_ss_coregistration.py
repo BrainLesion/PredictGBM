@@ -14,7 +14,11 @@ from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtract
 from brainles_preprocessing.normalization.percentile_normalizer import (
     PercentileNormalizer,
 )
-from predict_gbm.preprocessing.dirac import run_dirac_registration
+from predict_gbm.preprocessing.dirac import (
+    MODALITIES_FOUR,
+    MODALITIES_SINGLE,
+    run_dirac_registration,
+)
 from predict_gbm.utils.constants import (
     ATLAS_STRIPPED_SCHEMA,
     ATLAS_UNSTRIPPED_SCHEMA,
@@ -48,7 +52,6 @@ ANTS_REGISTRATION_TRANSFORMS = {
 SUPPORTED_REGISTRATION_ALGORITHMS = ("dirac",) + tuple(ANTS_REGISTRATION_TRANSFORMS)
 # ANTs transform fitted on t1c before DIRAC, without masks (as in the challenge container).
 DIRAC_AFFINE_TRANSFORM = "Affine"
-DIRAC_MODALITIES = ("t1", "t1c", "flair", "t2")
 
 
 class LinearANTsRegistrator(ANTsRegistrator):
@@ -484,7 +487,7 @@ def register_recurrence(
             "flair": flair_post_file,
             "t2": t2_post_file,
         }
-        dirac_modalities = ("t1c",) if dirac_single_modality else DIRAC_MODALITIES
+        dirac_modalities = MODALITIES_SINGLE if dirac_single_modality else MODALITIES_FOUR
         missing = [
             f"{modality}_{exam}_file"
             for exam, files in (("pre", pre_files), ("post", post_files))

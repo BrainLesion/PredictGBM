@@ -18,10 +18,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 #
-# The network building blocks, the three network classes, the transform units, NCC_weight and
-# smoothloss are from the DIRAC repository (https://github.com/cwmok/DIRAC, licence above).
-# L2R_Instance_opt_grid_bidirection, the network step and the instance optimization follow the
-# inference code of the authors' BraTS-Reg 2022 challenge container (my_script_pytorch.py).
+# The four-modality checkpoint from the BraTS-Reg 2022 container is redistributed
+# under MIT with the author's written permission (T. Mok, 7 Oct 2026).
+
 
 """DIRAC-based longitudinal registration of a follow-up (post-operative) exam to the pre-operative exam.
 
@@ -73,7 +72,6 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 # refined from here by the instance optimization.
 IMGSHAPE = (160, 160, 80)
 IMGSHAPE_2 = tuple(s // 2 for s in IMGSHAPE)
-IMGSHAPE_4 = tuple(s // 4 for s in IMGSHAPE)
 RANGE_FLOW = 0.4
 START_CHANNEL = 6
 NUM_CBLOCK = 5
@@ -118,6 +116,17 @@ def generate_grid_unit(imgshape):
     grid = np.swapaxes(grid, 0, 2)
     grid = np.swapaxes(grid, 1, 2)
     return grid
+
+
+def model_grid(imgshape: Sequence[int]) -> torch.Tensor:
+    """Identity grid (1, n0, n1, n2, 3) for the network classes as a float32 CUDA tensor.
+
+    Uses the container's numpy construction rather than identity_grid: the two differ by one
+    float32 ulp in part of the entries, and only this one reproduces the container's network
+    output bit for bit.
+    """
+    grid = generate_grid_unit(imgshape)
+    return torch.from_numpy(np.reshape(grid, (1,) + grid.shape)).cuda().float()
 
 
 def imgnorm(img):
@@ -184,13 +193,8 @@ class AdaptiveInstanceNorm(nn.Module):
     def __init__(self, in_channel, latent_dim=256):
         super().__init__()
 
-        # self.norm = nn.InstanceNorm3d(in_channel)
-
-        # self.style = EqualLinear(style_dim, in_channel * 2)
-
         self.style = nn.Linear(latent_dim, in_channel * 2)
 
-        # self.style.bias.data[:in_channel] = 1
         self.style.bias.data[:in_channel] = 0
         self.style.bias.data[in_channel:] = 0
 
@@ -204,7 +208,6 @@ class AdaptiveInstanceNorm(nn.Module):
         )
         gamma, beta = style.chunk(2, dim=1)
 
-        # out = self.norm(input)
         out = input
 
         out = (1.0 + gamma) * out + beta
@@ -281,34 +284,10 @@ class SpatialTransform_unit(nn.Module):
 
     def forward(self, x, flow, sample_grid):
         sample_grid = sample_grid + flow
-        # size_tensor = sample_grid.size()
-        # sample_grid[0, :, :, :, 0] = (sample_grid[0, :, :, :, 0] - (size_tensor[3] / 2)) / size_tensor[3] * 2
-        # sample_grid[0, :, :, :, 1] = (sample_grid[0, :, :, :, 1] - (size_tensor[2] / 2)) / size_tensor[2] * 2
-        # sample_grid[0, :, :, :, 2] = (sample_grid[0, :, :, :, 2] - (size_tensor[1] / 2)) / size_tensor[1] * 2
         flow = torch.nn.functional.grid_sample(
             x, sample_grid, mode="bilinear", padding_mode="border", align_corners=True
         )
 
-        return flow
-
-
-class DiffeomorphicTransform_unit(nn.Module):
-    def __init__(self, time_step=7):
-        super(DiffeomorphicTransform_unit, self).__init__()
-        self.time_step = time_step
-
-    def forward(self, velocity, sample_grid):
-        flow = velocity / (2.0**self.time_step)
-        # size_tensor = sample_grid.size()
-        # 0.5 flow
-        for _ in range(self.time_step):
-            grid = sample_grid + flow.permute(0, 2, 3, 4, 1)
-            # grid[0, :, :, :, 0] = (grid[0, :, :, :, 0] - (size_tensor[3] / 2)) / size_tensor[3] * 2
-            # grid[0, :, :, :, 1] = (grid[0, :, :, :, 1] - (size_tensor[2] / 2)) / size_tensor[2] * 2
-            # grid[0, :, :, :, 2] = (grid[0, :, :, :, 2] - (size_tensor[1] / 2)) / size_tensor[1] * 2
-            flow = flow + F.grid_sample(
-                flow, grid, mode="bilinear", padding_mode="border", align_corners=True
-            )
         return flow
 
 
@@ -317,11 +296,7 @@ class CompositionTransform_unit(nn.Module):
         super(CompositionTransform_unit, self).__init__()
 
     def forward(self, flow_1, flow_2, sample_grid):
-        # size_tensor = sample_grid.size()
         grid = sample_grid + flow_2.permute(0, 2, 3, 4, 1)
-        # grid[0, :, :, :, 0] = (grid[0, :, :, :, 0] - (size_tensor[3] / 2)) / size_tensor[3] * 2
-        # grid[0, :, :, :, 1] = (grid[0, :, :, :, 1] - (size_tensor[2] / 2)) / size_tensor[2] * 2
-        # grid[0, :, :, :, 2] = (grid[0, :, :, :, 2] - (size_tensor[1] / 2)) / size_tensor[1] * 2
         compos_flow = (
             F.grid_sample(
                 flow_1, grid, mode="bilinear", padding_mode="border", align_corners=True
@@ -341,8 +316,6 @@ class Miccai2021_LDR_laplacian_unit_disp_add_AdaIn_lvl1(nn.Module):
         in_channel,
         n_classes,
         start_channel,
-        is_train=True,
-        imgshape=(160, 192, 144),
         range_flow=0.4,
         num_block=5,
     ):
@@ -352,20 +325,6 @@ class Miccai2021_LDR_laplacian_unit_disp_add_AdaIn_lvl1(nn.Module):
         self.start_channel = start_channel
 
         self.range_flow = range_flow
-        self.is_train = is_train
-
-        self.imgshape = imgshape
-
-        self.grid_1 = generate_grid_unit(self.imgshape)
-        self.grid_1 = (
-            torch.from_numpy(np.reshape(self.grid_1, (1,) + self.grid_1.shape))
-            .cuda()
-            .float()
-        )
-
-        self.diff_transform = DiffeomorphicTransform_unit(time_step=7).cuda()
-        self.transform = SpatialTransform_unit().cuda()
-        # self.com_transform = CompositionTransform().cuda()
 
         bias_opt = False
 
@@ -381,16 +340,11 @@ class Miccai2021_LDR_laplacian_unit_disp_add_AdaIn_lvl1(nn.Module):
             padding=1,
             bias=bias_opt,
         )
-        # self.input_encoder_lvl2 = self.input_feature_extract(self.in_channel, self.start_channel * 4, bias=bias_opt)
-        # self.input_encoder_lvl3 = self.input_feature_extract(self.in_channel, self.start_channel * 4, bias=bias_opt)
 
         self.resblock_group_lvl1 = self.resblock_seq(
             self.start_channel * 4, num_block=num_block, bias_opt=bias_opt
         )
-        # self.resblock_group_lvl2 = self.resblock_seq(self.start_channel * 4, bias_opt=bias_opt)
-        # self.resblock_group_lvl3 = self.resblock_seq(self.start_channel * 4, bias_opt=bias_opt)
 
-        # self.up = torch.nn.Upsample(scale_factor=2, mode="trilinear", align_corners=False)
         self.up = nn.ConvTranspose3d(
             self.start_channel * 4,
             self.start_channel * 4,
@@ -413,14 +367,6 @@ class Miccai2021_LDR_laplacian_unit_disp_add_AdaIn_lvl1(nn.Module):
             padding=1,
             bias=False,
         )
-        # self.output_lvl2 = self.outputs(self.start_channel * 4, self.n_classes, kernel_size=5, stride=1, padding=2,
-        #                            bias=False)
-        # self.output_lvl3 = self.outputs(self.start_channel * 4, self.n_classes, kernel_size=5, stride=1, padding=2,
-        #                            bias=False)
-
-        # for m in self.modules():
-        #     if isinstance(m, nn.Conv3d):
-        #         nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
 
     def resblock_seq(self, in_channels, num_block, bias_opt=False):
         blocks = []
@@ -524,9 +470,6 @@ class Miccai2021_LDR_laplacian_unit_disp_add_AdaIn_lvl1(nn.Module):
                 nn.Tanh(),
             )
         else:
-            # layer = nn.Sequential(
-            #     nn.Conv3d(in_channels, out_channels, kernel_size, stride=stride, padding=padding, bias=bias),
-            #     nn.Tanh())
             layer = nn.Sequential(
                 nn.Conv3d(
                     in_channels,
@@ -555,13 +498,9 @@ class Miccai2021_LDR_laplacian_unit_disp_add_AdaIn_lvl1(nn.Module):
         cat_input = self.down_avg(cat_input)
         cat_input_lvl1 = self.down_avg(cat_input)
 
-        start_s, end_s = self.in_channel // 2, self.in_channel
-        down_y = cat_input_lvl1[:, start_s:end_s, :, :, :]
-
         fea_e0 = self.input_encoder_lvl1(cat_input_lvl1)
         e0 = self.down_conv(fea_e0)
 
-        # e0 = self.resblock_group_lvl1(e0)
         for i in range(len(self.resblock_group_lvl1)):
             if i % 2 == 0:
                 e0 = self.resblock_group_lvl1[i](e0, reg_code)
@@ -572,21 +511,7 @@ class Miccai2021_LDR_laplacian_unit_disp_add_AdaIn_lvl1(nn.Module):
         output_disp_e0_v = (
             self.output_lvl1(torch.cat([e0, fea_e0], dim=1)) * self.range_flow
         )
-        # output_disp_e0 = self.diff_transform(output_disp_e0_v, self.grid_1)
-        warpped_inputx_lvl1_out = self.transform(
-            x, output_disp_e0_v.permute(0, 2, 3, 4, 1), self.grid_1
-        )
-
-        if self.is_train is True:
-            return (
-                output_disp_e0_v,
-                warpped_inputx_lvl1_out,
-                down_y,
-                output_disp_e0_v,
-                e0,
-            )
-        else:
-            return output_disp_e0_v
+        return output_disp_e0_v, e0
 
 
 class Miccai2021_LDR_laplacian_unit_disp_add_AdaIn_lvl2(nn.Module):
@@ -595,7 +520,6 @@ class Miccai2021_LDR_laplacian_unit_disp_add_AdaIn_lvl2(nn.Module):
         in_channel,
         n_classes,
         start_channel,
-        is_train=True,
         imgshape=(160, 192, 144),
         range_flow=0.4,
         model_lvl1=None,
@@ -607,24 +531,14 @@ class Miccai2021_LDR_laplacian_unit_disp_add_AdaIn_lvl2(nn.Module):
         self.start_channel = start_channel
 
         self.range_flow = range_flow
-        self.is_train = is_train
 
         self.imgshape = imgshape
 
         self.model_lvl1 = model_lvl1
-        # self.model_lvl1 = [model_lvl1[i] for i in range(len(model_lvl1)-1)]
-        # self.model_lvl1 = nn.Sequential(*self.model_lvl1)
 
-        self.grid_1 = generate_grid_unit(self.imgshape)
-        self.grid_1 = (
-            torch.from_numpy(np.reshape(self.grid_1, (1,) + self.grid_1.shape))
-            .cuda()
-            .float()
-        )
+        self.grid_1 = model_grid(self.imgshape)
 
-        self.diff_transform = DiffeomorphicTransform_unit(time_step=7).cuda()
         self.transform = SpatialTransform_unit().cuda()
-        self.com_transform = CompositionTransform_unit().cuda()
 
         bias_opt = False
 
@@ -640,14 +554,10 @@ class Miccai2021_LDR_laplacian_unit_disp_add_AdaIn_lvl2(nn.Module):
             padding=1,
             bias=bias_opt,
         )
-        # self.input_encoder_lvl2 = self.input_feature_extract(self.in_channel, self.start_channel * 4, bias=bias_opt)
-        # self.input_encoder_lvl3 = self.input_feature_extract(self.in_channel, self.start_channel * 4, bias=bias_opt)
 
         self.resblock_group_lvl1 = self.resblock_seq(
             self.start_channel * 4, num_block=num_block, bias_opt=bias_opt
         )
-        # self.resblock_group_lvl2 = self.resblock_seq(self.start_channel * 4, bias_opt=bias_opt)
-        # self.resblock_group_lvl3 = self.resblock_seq(self.start_channel * 4, bias_opt=bias_opt)
 
         self.up_tri = torch.nn.Upsample(
             scale_factor=2, mode="trilinear", align_corners=False
@@ -675,21 +585,6 @@ class Miccai2021_LDR_laplacian_unit_disp_add_AdaIn_lvl2(nn.Module):
             bias=False,
         )
 
-        # self.output_lvl2 = self.outputs(self.start_channel * 4, self.n_classes, kernel_size=5, stride=1, padding=2,
-        #                            bias=False)
-        # self.output_lvl3 = self.outputs(self.start_channel * 4, self.n_classes, kernel_size=5, stride=1, padding=2,
-        #                            bias=False)
-
-        # for m in self.modules():
-        #     if isinstance(m, nn.Conv3d):
-        #         nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-
-    def unfreeze_modellvl1(self):
-        # unFreeze model_lvl1 weight
-        print("\nunfreeze model_lvl1 parameter")
-        for param in self.model_lvl1.parameters():
-            param.requires_grad = True
-
     def resblock_seq(self, in_channels, num_block, bias_opt=False):
         blocks = []
         for i in range(num_block):
@@ -792,9 +687,6 @@ class Miccai2021_LDR_laplacian_unit_disp_add_AdaIn_lvl2(nn.Module):
                 nn.Tanh(),
             )
         else:
-            # layer = nn.Sequential(
-            #     nn.Conv3d(in_channels, out_channels, kernel_size, stride=stride, padding=padding, bias=bias),
-            #     nn.Tanh())
             layer = nn.Sequential(
                 nn.Conv3d(
                     in_channels,
@@ -818,10 +710,8 @@ class Miccai2021_LDR_laplacian_unit_disp_add_AdaIn_lvl2(nn.Module):
         return layer
 
     def forward(self, x, y, reg_code):
-        # output_disp_e0, warpped_inputx_lvl1_out, down_y, output_disp_e0_v, e0
-        lvl1_disp, _, _, lvl1_v, lvl1_embedding = self.model_lvl1(x, y, reg_code)
+        lvl1_disp, lvl1_embedding = self.model_lvl1(x, y, reg_code)
 
-        # lvl1_disp, lvl1_warp, lvl1_y, lvl1_v, lvl1_embedding = self.model_lvl1(x, y, reg_code)
         lvl1_disp_up = self.up_tri(lvl1_disp)
 
         x_down = self.down_avg(x)
@@ -838,7 +728,6 @@ class Miccai2021_LDR_laplacian_unit_disp_add_AdaIn_lvl2(nn.Module):
 
         e0 = e0 + lvl1_embedding
 
-        # e0 = self.resblock_group_lvl1(e0)
         for i in range(len(self.resblock_group_lvl1)):
             if i % 2 == 0:
                 e0 = self.resblock_group_lvl1[i](e0, reg_code)
@@ -849,24 +738,8 @@ class Miccai2021_LDR_laplacian_unit_disp_add_AdaIn_lvl2(nn.Module):
         output_disp_e0_v = (
             self.output_lvl1(torch.cat([e0, fea_e0], dim=1)) * self.range_flow
         )
-        # output_disp_e0 = self.diff_transform(output_disp_e0_v, self.grid_1)
         compose_field_e0_lvl1 = lvl1_disp_up + output_disp_e0_v
-        warpped_inputx_lvl1_out = self.transform(
-            x, compose_field_e0_lvl1.permute(0, 2, 3, 4, 1), self.grid_1
-        )
-
-        if self.is_train is True:
-            return (
-                compose_field_e0_lvl1,
-                warpped_inputx_lvl1_out,
-                y_down,
-                output_disp_e0_v,
-                lvl1_v,
-                e0,
-            )
-            # return compose_field_e0_lvl1, warpped_inputx_lvl1_out, y_down, output_disp_e0_v, lvl1_v, e0, lvl1_warp, lvl1_y
-        else:
-            return compose_field_e0_lvl1
+        return compose_field_e0_lvl1, e0
 
 
 class Miccai2021_LDR_laplacian_unit_disp_add_AdaIn_lvl3(nn.Module):
@@ -875,7 +748,6 @@ class Miccai2021_LDR_laplacian_unit_disp_add_AdaIn_lvl3(nn.Module):
         in_channel,
         n_classes,
         start_channel,
-        is_train=True,
         imgshape=(160, 192, 144),
         range_flow=0.4,
         model_lvl2=None,
@@ -887,22 +759,14 @@ class Miccai2021_LDR_laplacian_unit_disp_add_AdaIn_lvl3(nn.Module):
         self.start_channel = start_channel
 
         self.range_flow = range_flow
-        self.is_train = is_train
 
         self.imgshape = imgshape
 
         self.model_lvl2 = model_lvl2
 
-        self.grid_1 = generate_grid_unit(self.imgshape)
-        self.grid_1 = (
-            torch.from_numpy(np.reshape(self.grid_1, (1,) + self.grid_1.shape))
-            .cuda()
-            .float()
-        )
+        self.grid_1 = model_grid(self.imgshape)
 
-        self.diff_transform = DiffeomorphicTransform_unit(time_step=7).cuda()
         self.transform = SpatialTransform_unit().cuda()
-        self.com_transform = CompositionTransform_unit().cuda()
 
         bias_opt = False
 
@@ -936,8 +800,6 @@ class Miccai2021_LDR_laplacian_unit_disp_add_AdaIn_lvl3(nn.Module):
             bias=bias_opt,
         )
 
-        # self.down_avg = nn.AvgPool3d(kernel_size=3, stride=2, padding=1, count_include_pad=False)
-
         self.output_lvl1 = self.outputs(
             self.start_channel * 8,
             self.n_classes,
@@ -946,16 +808,6 @@ class Miccai2021_LDR_laplacian_unit_disp_add_AdaIn_lvl3(nn.Module):
             padding=1,
             bias=False,
         )
-
-        # for m in self.modules():
-        #     if isinstance(m, nn.Conv3d):
-        #         nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-
-    def unfreeze_modellvl2(self):
-        # unFreeze model_lvl1 weight
-        print("\nunfreeze model_lvl2 parameter")
-        for param in self.model_lvl2.parameters():
-            param.requires_grad = True
 
     def resblock_seq(self, in_channels, num_block, bias_opt=False):
         blocks = []
@@ -1059,9 +911,6 @@ class Miccai2021_LDR_laplacian_unit_disp_add_AdaIn_lvl3(nn.Module):
                 nn.Tanh(),
             )
         else:
-            # layer = nn.Sequential(
-            #     nn.Conv3d(in_channels, out_channels, kernel_size, stride=stride, padding=padding, bias=bias),
-            #     nn.Tanh())
             layer = nn.Sequential(
                 nn.Conv3d(
                     in_channels,
@@ -1085,12 +934,7 @@ class Miccai2021_LDR_laplacian_unit_disp_add_AdaIn_lvl3(nn.Module):
         return layer
 
     def forward(self, x, y, reg_code):
-        # compose_field_e0_lvl1, warpped_inputx_lvl1_out, down_y, output_disp_e0_v, lvl1_v, e0
-        lvl2_disp, _, _, lvl2_v, lvl1_v, lvl2_embedding = self.model_lvl2(
-            x, y, reg_code
-        )
-
-        # lvl2_disp, lvl2_warp, lvl2_y, lvl2_v, lvl1_v, lvl2_embedding, lvl1_warp, lvl1_y = self.model_lvl2(x, y, reg_code)
+        lvl2_disp, lvl2_embedding = self.model_lvl2(x, y, reg_code)
 
         lvl2_disp_up = self.up_tri(lvl2_disp)
         warpped_x = self.transform(x, lvl2_disp_up.permute(0, 2, 3, 4, 1), self.grid_1)
@@ -1102,7 +946,6 @@ class Miccai2021_LDR_laplacian_unit_disp_add_AdaIn_lvl3(nn.Module):
 
         e0 = e0 + lvl2_embedding
 
-        # e0 = self.resblock_group_lvl1(e0)
         for i in range(len(self.resblock_group_lvl1)):
             if i % 2 == 0:
                 e0 = self.resblock_group_lvl1[i](e0, reg_code)
@@ -1113,26 +956,8 @@ class Miccai2021_LDR_laplacian_unit_disp_add_AdaIn_lvl3(nn.Module):
         output_disp_e0_v = (
             self.output_lvl1(torch.cat([e0, fea_e0], dim=1)) * self.range_flow
         )
-        # output_disp_e0 = self.diff_transform(output_disp_e0_v, self.grid_1)
         compose_field_e0_lvl1 = output_disp_e0_v + lvl2_disp_up
-
-        warpped_inputx_lvl1_out = self.transform(
-            x, compose_field_e0_lvl1.permute(0, 2, 3, 4, 1), self.grid_1
-        )
-
-        if self.is_train is True:
-            return (
-                compose_field_e0_lvl1,
-                warpped_inputx_lvl1_out,
-                y,
-                output_disp_e0_v,
-                lvl1_v,
-                lvl2_disp,
-                e0,
-            )
-            # return compose_field_e0_lvl1, warpped_inputx_lvl1_out, y, output_disp_e0_v, lvl1_v, lvl2_v, e0, lvl1_warp, lvl1_y, lvl2_warp, lvl2_y
-        else:
-            return compose_field_e0_lvl1
+        return compose_field_e0_lvl1
 
 
 # -----------------------------------------------------------------------------
@@ -1228,8 +1053,6 @@ def build_network(in_channel: int, device: torch.device) -> nn.Module:
         in_channel,
         3,
         START_CHANNEL,
-        is_train=True,
-        imgshape=IMGSHAPE_4,
         range_flow=RANGE_FLOW,
         num_block=NUM_CBLOCK,
     ).to(device)
@@ -1237,7 +1060,6 @@ def build_network(in_channel: int, device: torch.device) -> nn.Module:
         in_channel,
         3,
         START_CHANNEL,
-        is_train=True,
         imgshape=IMGSHAPE_2,
         range_flow=RANGE_FLOW,
         model_lvl1=model_lvl1,
@@ -1247,7 +1069,6 @@ def build_network(in_channel: int, device: torch.device) -> nn.Module:
         in_channel,
         3,
         START_CHANNEL,
-        is_train=True,
         imgshape=IMGSHAPE,
         range_flow=RANGE_FLOW,
         model_lvl2=model_lvl2,
@@ -1305,8 +1126,8 @@ def run_network(
         Y = F.interpolate(Y_ori, size=IMGSHAPE, mode="trilinear", align_corners=False)
 
         reg_code = torch.tensor([REG_CODE], dtype=X.dtype, device=device).unsqueeze(dim=0)
-        F_X_Y = model(affine_X, Y, reg_code)[0]
-        F_Y_X = model(affine_Y, X, reg_code)[0]
+        F_X_Y = model(affine_X, Y, reg_code)
+        F_Y_X = model(affine_Y, X, reg_code)
 
         compose = CompositionTransform_unit()
         deep_F_X_Y = compose(affine_F_X_Y, F_X_Y, id_grid)
@@ -1384,7 +1205,7 @@ class L2R_Instance_opt_grid_bidirection(nn.Module):
 
     def forward(
         self, x: torch.Tensor, y: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         flow_xy = F.interpolate(
             self.disp_xy, size=self.imgshape, mode="trilinear", align_corners=True
         )
@@ -1393,7 +1214,7 @@ class L2R_Instance_opt_grid_bidirection(nn.Module):
         )
         warped_x = self.transform(x, flow_xy.permute(0, 2, 3, 4, 1), self.grid_1)
         warped_y = self.transform(y, flow_yx.permute(0, 2, 3, 4, 1), self.grid_1)
-        return flow_xy, flow_yx, warped_x, warped_y, self.disp_xy, self.disp_yx
+        return flow_xy, flow_yx, warped_x, warped_y
 
 
 def pyramid_sizes(
@@ -1494,7 +1315,7 @@ def dirac_instance_optimization(
         best_loss = float("inf")
         best_F_X_Y = best_F_Y_X = None
         for _ in range(iterations[level]):
-            F_X_Y, F_Y_X, X_Y, Y_X, _, _ = io_model(X_l, Y_l)
+            F_X_Y, F_Y_X, X_Y, Y_X = io_model(X_l, Y_l)
 
             F_X_Y_warpped = transform(F_X_Y, F_Y_X.permute(0, 2, 3, 4, 1), grid_unit)
             F_Y_X_warpped = transform(F_Y_X, F_X_Y.permute(0, 2, 3, 4, 1), grid_unit)
