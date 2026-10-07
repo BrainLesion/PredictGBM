@@ -36,5 +36,10 @@ if __name__ == "__main__":
         # Optional: name -> DICOM dir, not intensity-normalized (e.g. ADC)
         additional_quantitative_modality_preop_dirs=None,
         additional_quantitative_modality_followup_dirs=None,
+        # Optional: longitudinal registration, "dirac" (default), "syn", "affine" or "rigid".
+        # DIRAC uses t1, t1c, t2 and flair of both exams; dirac_single_modality=True runs
+        # the t1c-only checkpoint instead.
+        registration_algorithm="dirac",
+        dirac_single_modality=False,
     )
     processor.run()

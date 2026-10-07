@@ -5,38 +5,47 @@ import torch
 import torch.nn.functional as F
 
 from predict_gbm.preprocessing.dirac import (
+    SpatialTransform_unit,
     dirac_instance_optimization,
-    warp,
-    warp_field,
+    identity_grid,
 )
 
 # Silence third-party warnings that clutter test output
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-SHAPE: tuple[int, int, int] = (40, 48, 32)  # (D, H, W), anisotropic
-# Small pyramid and short schedule so the test stays fast on CPU; the loss and
-# regularization settings are the function defaults.
+SHAPE: tuple[int, int, int] = (40, 48, 32)  # (n0, n1, n2), anisotropic
+# Small pyramid and short schedule so the test stays fast on CPU; the loss weights and
+# control grids are the function defaults.
 FAST_SCHEDULE: dict[str, tuple[int, ...] | int] = {
-    "iters": (30, 20, 15, 10, 5),
-    "coarsest_size": 16,
+    "iterations": (30, 20, 15, 10, 5),
+    "min_size": 16,
 }
+
+
+def voxel_to_normalized(field_voxel: torch.Tensor) -> torch.Tensor:
+    """(1,3,n0,n1,n2) field in voxels with channels [axis 2, axis 1, axis 0] to the normalized
+    align_corners=True units of F.grid_sample."""
+    n0, n1, n2 = field_voxel.shape[2:]
+    scale = torch.tensor([2.0 / (n2 - 1), 2.0 / (n1 - 1), 2.0 / (n0 - 1)])
+    return field_voxel * scale.view(1, 3, 1, 1, 1)
 
 
 def smooth_field(
     shape: tuple[int, int, int], amplitude: float, seed: int, control_points: int = 3
 ) -> torch.Tensor:
-    """Smooth random (1,3,D,H,W) voxel displacement with the given mean magnitude."""
+    """Smooth random (1,3,n0,n1,n2) field with the given mean magnitude in voxels, returned
+    in normalized coordinates."""
     generator = torch.Generator().manual_seed(seed)
     coarse = torch.randn(
         1, 3, control_points, control_points, control_points, generator=generator
     )
     dense = F.interpolate(coarse, size=shape, mode="trilinear", align_corners=True)
-    return dense * (amplitude / dense.norm(dim=1).mean())
+    return voxel_to_normalized(dense * (amplitude / dense.norm(dim=1).mean()))
 
 
 def phantom(shape: tuple[int, int, int], seed: int) -> torch.Tensor:
-    """Smooth random (1,1,D,H,W) image with some fine texture, scaled to [0, 1]."""
+    """Smooth random (1,1,n0,n1,n2) image with some fine texture, scaled to [0, 1]."""
     generator = torch.Generator().manual_seed(seed)
     coarse = torch.randn(1, 1, *[max(2, s // 3) for s in shape], generator=generator)
     fine = torch.randn(1, 1, *[max(2, s // 2) for s in shape], generator=generator)
@@ -47,65 +56,71 @@ def phantom(shape: tuple[int, int, int], seed: int) -> torch.Tensor:
     return (image - image.min()) / (image.max() - image.min())
 
 
-def invert_field(disp: torch.Tensor, n_iter: int = 30) -> torch.Tensor:
+def warp(tensor: torch.Tensor, flow: torch.Tensor) -> torch.Tensor:
+    """Sample an image or field at grid + flow (normalized coordinates)."""
+    grid = identity_grid(tensor.shape[2:], tensor.device)
+    return SpatialTransform_unit()(tensor, flow.permute(0, 2, 3, 4, 1), grid)
+
+
+def invert_field(flow: torch.Tensor, n_iter: int = 30) -> torch.Tensor:
     """Fixed-point inverse of a displacement field: v(x) = -u(x + v(x))."""
-    inverse = -disp
+    inverse = -flow
     for _ in range(n_iter):
-        inverse = -warp_field(disp, inverse)
+        inverse = -warp(flow, inverse)
     return inverse
 
 
 class TestDiracInstanceOptimization(unittest.TestCase):
+    """X is the pre-op image, Y the follow-up; F_Y_X on the pre-op grid samples the follow-up,
+    F_X_Y the opposite direction (the container's naming, see dirac.py)."""
+
     def setUp(self) -> None:
         torch.manual_seed(0)
         self.followup: torch.Tensor = phantom(SHAPE, seed=1)
-        self.u_true: torch.Tensor = smooth_field(SHAPE, amplitude=1.5, seed=2)
-        self.preop: torch.Tensor = warp(self.followup, self.u_true)
-        self.u_true_inverse: torch.Tensor = invert_field(self.u_true)
+        self.F_Y_X_true: torch.Tensor = smooth_field(SHAPE, amplitude=1.5, seed=2)
+        self.preop: torch.Tensor = warp(self.followup, self.F_Y_X_true)
+        self.F_X_Y_true: torch.Tensor = invert_field(self.F_Y_X_true)
 
-    def test_zero_iterations_returns_input_fields(self) -> None:
-        u_fb = self.u_true + smooth_field(SHAPE, amplitude=1.0, seed=11)
-        u_bf = self.u_true_inverse + smooth_field(SHAPE, amplitude=0.5, seed=12)
-        mask_fb = torch.zeros_like(self.preop)
-        mask_fb[:, :, 10:18, 12:24, 8:20] = 1.0
-        mask_bf = torch.zeros_like(self.preop)
-        mask_bf[:, :, 20:26, 30:40, 14:26] = 1.0
+    def test_zero_iterations_returns_band_limited_input_fields(self) -> None:
+        F_Y_X = self.F_Y_X_true + smooth_field(SHAPE, amplitude=1.0, seed=11)
+        F_X_Y = self.F_X_Y_true + smooth_field(SHAPE, amplitude=0.5, seed=12)
 
-        out_fb, out_bf, out_mask_fb, out_mask_bf = dirac_instance_optimization(
+        out_F_X_Y, out_F_Y_X = dirac_instance_optimization(
             self.preop,
             self.followup,
-            u_fb,
-            u_bf,
-            m_fb_fixed=mask_fb,
-            m_bf_fixed=mask_bf,
-            iters=(0, 0, 0, 0, 0),
-            coarsest_size=16,
+            F_X_Y,
+            F_Y_X,
+            iterations=(0, 0, 0, 0, 0),
+            min_size=16,
         )
 
-        self.assertEqual(out_fb.shape, u_fb.shape)
-        self.assertEqual(out_bf.shape, u_bf.shape)
-        self.assertTrue(torch.isfinite(out_fb).all())
-        self.assertTrue(torch.isfinite(out_bf).all())
-        self.assertLessEqual(float((out_fb - u_fb).abs().max()), 1e-5)
-        self.assertLessEqual(float((out_bf - u_bf).abs().max()), 1e-5)
-        self.assertTrue(torch.equal(out_mask_fb, mask_fb))
-        self.assertTrue(torch.equal(out_mask_bf, mask_bf))
+        # Without iterations the fields only pass through the control grids, which
+        # band-limit them: close to the input, not identical.
+        self.assertEqual(out_F_Y_X.shape, F_Y_X.shape)
+        self.assertEqual(out_F_X_Y.shape, F_X_Y.shape)
+        self.assertTrue(torch.isfinite(out_F_Y_X).all())
+        self.assertTrue(torch.isfinite(out_F_X_Y).all())
+        for out, ref in ((out_F_Y_X, F_Y_X), (out_F_X_Y, F_X_Y)):
+            relative_error = float(
+                (out - ref).norm(dim=1).mean() / ref.norm(dim=1).mean()
+            )
+            self.assertLess(relative_error, 0.05, relative_error)
 
     def test_optimization_improves_and_does_not_collapse(self) -> None:
-        u_init = self.u_true + smooth_field(SHAPE, amplitude=2.0, seed=31)
-        u_init_inverse = invert_field(u_init) + smooth_field(
+        F_Y_X_init = self.F_Y_X_true + smooth_field(SHAPE, amplitude=2.0, seed=31)
+        F_X_Y_init = invert_field(F_Y_X_init) + smooth_field(
             SHAPE, amplitude=0.3, seed=32
         )
-        error_in = float((u_init - self.u_true).norm(dim=1).mean())
-        magnitude_in = float(u_init.norm(dim=1).mean())
+        error_in = float((F_Y_X_init - self.F_Y_X_true).norm(dim=1).mean())
+        magnitude_in = float(F_Y_X_init.norm(dim=1).mean())
 
-        out_fb, _, _, _ = dirac_instance_optimization(
-            self.preop, self.followup, u_init, u_init_inverse, **FAST_SCHEDULE
+        _, out_F_Y_X = dirac_instance_optimization(
+            self.preop, self.followup, F_X_Y_init, F_Y_X_init, **FAST_SCHEDULE
         )
 
-        self.assertTrue(torch.isfinite(out_fb).all())
-        error_out = float((out_fb - self.u_true).norm(dim=1).mean())
-        magnitude_out = float(out_fb.norm(dim=1).mean())
+        self.assertTrue(torch.isfinite(out_F_Y_X).all())
+        error_out = float((out_F_Y_X - self.F_Y_X_true).norm(dim=1).mean())
+        magnitude_out = float(out_F_Y_X.norm(dim=1).mean())
         self.assertLess(error_out, error_in, (error_in, error_out))
         self.assertGreater(
             magnitude_out, 0.5 * magnitude_in, (magnitude_in, magnitude_out)

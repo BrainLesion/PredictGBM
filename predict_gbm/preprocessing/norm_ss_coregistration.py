@@ -1,10 +1,11 @@
 import ants
-import time
 import shutil
-import torch
+import tempfile
+import time
+import numpy as np
 from pathlib import Path
 from loguru import logger
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from brainles_preprocessing.normalization import Normalizer
 from brainles_preprocessing.preprocessor import AtlasCentricPreprocessor
 from brainles_preprocessing.registration import ANTsRegistrator
@@ -13,13 +14,7 @@ from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtract
 from brainles_preprocessing.normalization.percentile_normalizer import (
     PercentileNormalizer,
 )
-from predict_gbm.preprocessing.dirac import (
-    apply_longitudinal_warp,
-    resolve_dirac_disp_field,
-    optimize_warp_field,
-    run_dirac_inference,
-    warp_image_to_preop,
-)
+from predict_gbm.preprocessing.dirac import run_dirac_registration
 from predict_gbm.utils.constants import (
     ATLAS_STRIPPED_SCHEMA,
     ATLAS_UNSTRIPPED_SCHEMA,
@@ -27,7 +22,10 @@ from predict_gbm.utils.constants import (
     BRAINLES_LOGFILE_SCHEMA,
     CONFIG_STEP_NORM_SS_COREGISTER,
     CONFIG_STEP_REGISTER_RECURRENCE,
-    LONGITUDINAL_AFFINE_SCHEMA,
+    LONGITUDINAL_AFFINE_MAX_ABS_LOG_DET,
+    LONGITUDINAL_AFFINE_MAX_ROTATION_DEG,
+    LONGITUDINAL_AFFINE_MAX_TRANSLATION_MM,
+    LONGITUDINAL_AFFINE_SINGULAR_VALUE_RANGE,
     LONGITUDINAL_DISP_SCHEMA,
     LONGITUDINAL_WARP_SCHEMA,
     MODALITY_STRIPPED_SCHEMA,
@@ -40,15 +38,17 @@ from predict_gbm.utils.utils import update_config, validate_additional_modality_
 SUPPORTED_ATLASES = ("brats_mni152", "mni152", "sri24")
 
 # Longitudinal registration algorithms backed by ANTs, mapping the public algorithm name to
-# the ants.registration type_of_transform and the schema under which the resulting forward
-# transform is stored. Deformable transforms are displacement fields (.nii.gz), linear ones
-# are ANTs transform matrices (.mat).
+# the ants.registration type_of_transform. Every algorithm (these and dirac) stores its
+# forward transform as one ANTs displacement field under LONGITUDINAL_DISP_SCHEMA.
 ANTS_REGISTRATION_TRANSFORMS = {
-    "syn": ("antsRegistrationSyN[s,2]", LONGITUDINAL_DISP_SCHEMA),
-    "affine": ("Affine", LONGITUDINAL_AFFINE_SCHEMA),
-    "rigid": ("Rigid", LONGITUDINAL_AFFINE_SCHEMA),
+    "syn": "antsRegistrationSyN[s,2]",
+    "affine": "Affine",
+    "rigid": "Rigid",
 }
 SUPPORTED_REGISTRATION_ALGORITHMS = ("dirac",) + tuple(ANTS_REGISTRATION_TRANSFORMS)
+# ANTs transform fitted on t1c before DIRAC, without masks (as in the challenge container).
+DIRAC_AFFINE_TRANSFORM = "Affine"
+DIRAC_MODALITIES = ("t1", "t1c", "flair", "t2")
 
 
 class LinearANTsRegistrator(ANTsRegistrator):
@@ -204,7 +204,7 @@ def norm_ss_coregister(
     skull_strip: bool = True,
     additional_modalities: Optional[Dict[str, Path]] = None,
     additional_quantitative_modalities: Optional[Dict[str, Path]] = None,
-    atlas: str = "brats_mni152",
+    atlas: str = "sri24",
 ) -> None:
     """
     Performs normalization, skull stripping and co-registration based on the brainles preprocessing module.
@@ -222,8 +222,9 @@ def norm_ss_coregister(
             additional_modalities, but processed without intensity normalization (e.g. for
             quantitative maps like ADC). Names must not collide with each other, with
             additional_modalities, or with the reserved modality names (t1, t1c, t2, flair).
-        atlas (str): Atlas to register the patient into. One of "brats_mni152" (default),
-            "mni152", or "sri24".
+        atlas (str): Atlas to register the patient into. One of "sri24" (default, the
+            240x240x155 grid the DIRAC longitudinal registration was built for),
+            "brats_mni152", or "mni152". The tissue segmentation must use the same atlas.
 
     Returns:
         None
@@ -305,6 +306,98 @@ def norm_ss_coregister(
     )
 
 
+def read_ants_affine_pre_to_post_mm(transform_file: Path) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Read the affine written by ants.registration(fixed=pre-op, moving=follow-up) as a 4x4 matrix.
+
+    The ITK transform maps pre-op physical points to follow-up physical points (it is what
+    resamples the follow-up onto the pre-op grid): p_post = A (p_pre - c) + c + t with the
+    matrix A (first nine parameters, row-major), the translation t (last three) and the
+    rotation centre c (fixed parameters), so the offset column of the matrix is t + c - A c.
+
+    Parameters:
+        transform_file (Path): The ANTs affine transform file (0GenericAffine.mat).
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray]: affine_pre_to_post_mm (4x4, physical LPS millimetres)
+        and the rotation centre c (3,).
+    """
+    transform = ants.read_transform(str(transform_file))
+    parameters = np.asarray(transform.parameters, dtype=np.float64)
+    centre = np.asarray(transform.fixed_parameters, dtype=np.float64)
+    if parameters.size != 12 or centre.size != 3:
+        raise ValueError(
+            f"Expected a 3-D affine transform with 12 parameters and 3 fixed parameters in "
+            f"{transform_file}, got {parameters.size} and {centre.size}."
+        )
+    matrix = parameters[:9].reshape(3, 3)
+    translation = parameters[9:]
+    affine_pre_to_post_mm = np.eye(4)
+    affine_pre_to_post_mm[:3, :3] = matrix
+    affine_pre_to_post_mm[:3, 3] = translation + centre - matrix @ centre
+    return affine_pre_to_post_mm, centre
+
+
+def check_affine_plausibility(affine_pre_to_post_mm: np.ndarray, centre: np.ndarray) -> None:
+    """
+    Log a warning for every implausible property of the affine pre-registration.
+
+    Decomposes the linear part A of affine_pre_to_post_mm and warns when |log det A| exceeds
+    LONGITUDINAL_AFFINE_MAX_ABS_LOG_DET, a singular value of A lies outside
+    LONGITUDINAL_AFFINE_SINGULAR_VALUE_RANGE, the rotation angle of the polar decomposition
+    exceeds LONGITUDINAL_AFFINE_MAX_ROTATION_DEG, or the translation after removing the
+    rotation-centre term exceeds LONGITUDINAL_AFFINE_MAX_TRANSLATION_MM. Warning only; the
+    matrix is used unchanged.
+
+    Parameters:
+        affine_pre_to_post_mm (np.ndarray): 4x4 matrix from read_ants_affine_pre_to_post_mm.
+        centre (np.ndarray): The rotation centre c of the ITK transform (3,).
+
+    Returns:
+        None
+    """
+    matrix = affine_pre_to_post_mm[:3, :3]
+    det = float(np.linalg.det(matrix))
+    if det <= 0:
+        logger.warning(
+            f"Affine pre-registration: determinant {det:.4f} of the linear part is not "
+            "positive (reflection or degenerate fit)."
+        )
+    elif abs(np.log(det)) > LONGITUDINAL_AFFINE_MAX_ABS_LOG_DET:
+        logger.warning(
+            f"Affine pre-registration: |log det A| = {abs(np.log(det)):.3f} exceeds "
+            f"{LONGITUDINAL_AFFINE_MAX_ABS_LOG_DET} (det A = {det:.4f})."
+        )
+
+    u, singular_values, vt = np.linalg.svd(matrix)
+    lower, upper = LONGITUDINAL_AFFINE_SINGULAR_VALUE_RANGE
+    if singular_values.min() < lower or singular_values.max() > upper:
+        logger.warning(
+            f"Affine pre-registration: singular values {np.round(singular_values, 4).tolist()} "
+            f"outside [{lower}, {upper}]."
+        )
+
+    rotation = u @ vt
+    if np.linalg.det(rotation) < 0:
+        u[:, -1] *= -1
+        rotation = u @ vt
+    angle_deg = float(np.degrees(np.arccos(np.clip((np.trace(rotation) - 1) / 2, -1.0, 1.0))))
+    if angle_deg > LONGITUDINAL_AFFINE_MAX_ROTATION_DEG:
+        logger.warning(
+            f"Affine pre-registration: rotation angle {angle_deg:.2f} deg exceeds "
+            f"{LONGITUDINAL_AFFINE_MAX_ROTATION_DEG} deg."
+        )
+
+    translation = affine_pre_to_post_mm[:3, 3] + (matrix - np.eye(3)) @ centre
+    translation_mm = float(np.linalg.norm(translation))
+    if translation_mm > LONGITUDINAL_AFFINE_MAX_TRANSLATION_MM:
+        logger.warning(
+            f"Affine pre-registration: translation {translation_mm:.2f} mm "
+            f"({np.round(translation, 2).tolist()}) exceeds "
+            f"{LONGITUDINAL_AFFINE_MAX_TRANSLATION_MM} mm."
+        )
+
+
 def register_recurrence(
     t1c_pre_file: Path,
     t1c_post_file: Path,
@@ -314,23 +407,44 @@ def register_recurrence(
     moving_mask_file: Path = None,
     registration_algorithm: str = "dirac",
     additional_modalities: Optional[Dict[str, Path]] = None,
+    t1_pre_file: Optional[Path] = None,
+    t2_pre_file: Optional[Path] = None,
+    flair_pre_file: Optional[Path] = None,
+    t1_post_file: Optional[Path] = None,
+    t2_post_file: Optional[Path] = None,
+    flair_post_file: Optional[Path] = None,
+    dirac_single_modality: bool = False,
 ) -> None:
     """
     Register a postop image with recurrence to preop.
+
+    Every algorithm stores the follow-up-to-pre-op transform as one ANTs displacement field
+    (longitudinal_trafo.nii.gz) and warps t1c, the recurrence segmentation and the additional
+    modalities with it. With "dirac", an ANTs affine on t1c is fitted first; the DIRAC network
+    (four modalities, or t1c alone with dirac_single_modality) and its instance optimization
+    refine it and the combined transform is stored.
 
     Parameters:
         t1c_pre_file (Path): Path to the pre-operative T1c image.
         t1c_post_file (Path): Path to the post-operative T1c image.
         recurrence_seg_file (Path): Path to the tumor segmentation.
         outdir (Path): Directory where the output files will be saved.
-        fixed_mask_file (Path): Path to a mask in fixed space used for registration.
-        moving_mask_file (Path): Path to a mask in moving space used for registration.
+        fixed_mask_file (Path): Path to a mask in fixed space used for registration. Only used
+            by the ANTs algorithms; ignored (with a warning) by "dirac".
+        moving_mask_file (Path): Path to a mask in moving space used for registration. Only
+            used by the ANTs algorithms; ignored (with a warning) by "dirac".
         registration_algorithm (str): Longitudinal registration approach. Supported
             values are "dirac", "syn" (ANTs SyN), "affine" (ANTs affine) and
             "rigid" (ANTs rigid).
         additional_modalities (Optional[Dict[str, Path]]): Mapping of modality name to its
             post-operative (followup-space) file. Each is warped into preop space alongside
             t1c_post_file. Must not contain the key "t1c".
+        t1_pre_file, t2_pre_file, flair_pre_file (Optional[Path]): Pre-operative T1, T2 and
+            FLAIR images. Required by "dirac" unless dirac_single_modality is set.
+        t1_post_file, t2_post_file, flair_post_file (Optional[Path]): The same for the
+            post-operative exam.
+        dirac_single_modality (bool): Run DIRAC with the t1c-only checkpoint instead of the
+            four-modality one, so that t1, t2 and flair are not needed.
 
     Returns:
         None
@@ -357,156 +471,149 @@ def register_recurrence(
         "use_moving_mask": moving_mask_file is not None,
     }
 
-    if algorithm in ANTS_REGISTRATION_TRANSFORMS:
-        type_of_transform, trafo_schema = ANTS_REGISTRATION_TRANSFORMS[algorithm]
-        logger.info(
-            f"Running ANTs registration with type_of_transform {type_of_transform}."
-        )
-
-        t1c_pre_img = ants.image_read(str(t1c_pre_file))
-        t1c_post_img = ants.image_read(str(t1c_post_file))
-
-        reg_kwargs = {}
+    if algorithm == "dirac":
+        pre_files = {
+            "t1": t1_pre_file,
+            "t1c": t1c_pre_file,
+            "flair": flair_pre_file,
+            "t2": t2_pre_file,
+        }
+        post_files = {
+            "t1": t1_post_file,
+            "t1c": t1c_post_file,
+            "flair": flair_post_file,
+            "t2": t2_post_file,
+        }
+        dirac_modalities = ("t1c",) if dirac_single_modality else DIRAC_MODALITIES
+        missing = [
+            f"{modality}_{exam}_file"
+            for exam, files in (("pre", pre_files), ("post", post_files))
+            for modality in dirac_modalities
+            if files[modality] is None or not Path(files[modality]).exists()
+        ]
+        if missing and dirac_single_modality:
+            raise ValueError(
+                f"DIRAC needs t1c of both exams; missing or not found: {missing}."
+            )
+        if missing:
+            raise ValueError(
+                "DIRAC with the four-modality model needs t1, t1c, t2 and flair of both exams; "
+                f"missing or not found: {missing}. Pass dirac_single_modality=True to run "
+                "the t1c-only model instead."
+            )
         if fixed_mask_file is not None:
-            reg_kwargs["mask"] = ants.image_read(str(fixed_mask_file))
-            logger.info(
-                f"Running with provided mask (fixed space) {str(fixed_mask_file)}."
+            logger.warning(
+                f"fixed_mask_file ({fixed_mask_file}) is currently ignored for DIRAC-based recurrence registration."
             )
         if moving_mask_file is not None:
-            reg_kwargs["moving_mask"] = ants.image_read(str(moving_mask_file))
-            logger.info(
-                f"Running with provided mask (moving space) {str(moving_mask_file)}."
+            logger.warning(
+                f"moving_mask_file ({moving_mask_file}) is currently ignored for DIRAC-based recurrence registration."
             )
-
-        reg = ants.registration(
-            fixed=t1c_pre_img,
-            moving=t1c_post_img,
-            type_of_transform=type_of_transform,
-            **reg_kwargs,
-        )
-
-        recurrence_outfile = RECURRENCE_SCHEMA.format(base_dir=outdir)
-        recurrence_outfile.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(
-            src=reg["fwdtransforms"][0],
-            dst=str(trafo_schema.format(base_dir=outdir)),
-        )
-        ants.image_write(
-            reg["warpedmovout"],
-            str(LONGITUDINAL_WARP_SCHEMA.format(base_dir=outdir, modality="t1c")),
-        )
-
-        recurrence_seg = ants.image_read(str(recurrence_seg_file))
-        recurrence_warped = ants.apply_transforms(
-            fixed=t1c_pre_img.clone("unsigned int"),
-            moving=recurrence_seg,
-            transformlist=reg["fwdtransforms"],
-            interpolator="nearestNeighbor",
-        )
-        ants.image_write(recurrence_warped, str(recurrence_outfile))
-
-        for modality_name, modality_post_file in additional_modalities.items():
-            modality_warped = ants.apply_transforms(
-                fixed=t1c_pre_img,
-                moving=ants.image_read(str(modality_post_file)),
-                transformlist=reg["fwdtransforms"],
-            )
-            ants.image_write(
-                modality_warped,
-                str(
-                    LONGITUDINAL_WARP_SCHEMA.format(
-                        base_dir=outdir, modality=modality_name
-                    )
-                ),
-            )
-
-        update_config(outdir, CONFIG_STEP_REGISTER_RECURRENCE, config_params)
-
-        time_spent = time.time() - start_time
-        logger.info(
-            f"Finished longitudinal co-registration in {time_spent:.2f} seconds. Output saved to {str(recurrence_outfile)}."
-        )
-        return
-
-    if fixed_mask_file is not None:
-        logger.warning(
-            f"fixed_mask_file ({fixed_mask_file}) is currently ignored for DIRAC-based recurrence registration."
-        )
-    if moving_mask_file is not None:
-        logger.warning(
-            f"moving_mask_file ({moving_mask_file}) is currently ignored for DIRAC-based recurrence registration."
-        )
 
     recurrence_outfile = RECURRENCE_SCHEMA.format(base_dir=outdir)
     recurrence_outfile.parent.mkdir(parents=True, exist_ok=True)
+    disp_file = LONGITUDINAL_DISP_SCHEMA.format(base_dir=outdir)
 
-    # Step 1: DIRAC inference (BRATS_infer_DIRAC.py)
-    run_dirac_inference(
-        t1c_pre_file=t1c_pre_file,
-        t1c_post_file=t1c_post_file,
-        workdir=recurrence_outfile.parent,
+    t1c_pre_img = ants.image_read(str(t1c_pre_file))
+    t1c_post_img = ants.image_read(str(t1c_post_file))
+
+    with tempfile.TemporaryDirectory(prefix="register_recurrence_") as tmpdir:
+        if algorithm in ANTS_REGISTRATION_TRANSFORMS:
+            type_of_transform = ANTS_REGISTRATION_TRANSFORMS[algorithm]
+            logger.info(
+                f"Running ANTs registration with type_of_transform {type_of_transform}."
+            )
+
+            reg_kwargs = {}
+            if fixed_mask_file is not None:
+                reg_kwargs["mask"] = ants.image_read(str(fixed_mask_file))
+                logger.info(
+                    f"Running with provided mask (fixed space) {str(fixed_mask_file)}."
+                )
+            if moving_mask_file is not None:
+                reg_kwargs["moving_mask"] = ants.image_read(str(moving_mask_file))
+                logger.info(
+                    f"Running with provided mask (moving space) {str(moving_mask_file)}."
+                )
+
+            reg = ants.registration(
+                fixed=t1c_pre_img,
+                moving=t1c_post_img,
+                type_of_transform=type_of_transform,
+                outprefix=f"{tmpdir}/ants_",
+                **reg_kwargs,
+            )
+            # One dense field holding all forward transforms (e.g. affine + warp for syn).
+            composed_file = ants.apply_transforms(
+                fixed=t1c_pre_img,
+                moving=t1c_post_img,
+                transformlist=reg["fwdtransforms"],
+                compose=f"{tmpdir}/composed_",
+            )
+            shutil.move(str(composed_file), str(disp_file))
+        else:
+            logger.info(
+                f"Running ANTs {DIRAC_AFFINE_TRANSFORM} pre-registration on t1c for DIRAC."
+            )
+            reg = ants.registration(
+                fixed=t1c_pre_img,
+                moving=t1c_post_img,
+                type_of_transform=DIRAC_AFFINE_TRANSFORM,
+                outprefix=f"{tmpdir}/affine_",
+            )
+            affine_pre_to_post_mm, centre = read_ants_affine_pre_to_post_mm(
+                reg["fwdtransforms"][0]
+            )
+            check_affine_plausibility(affine_pre_to_post_mm, centre)
+
+            disp_pre_to_post_mm = run_dirac_registration(
+                pre_files={m: pre_files[m] for m in dirac_modalities},
+                post_files={m: post_files[m] for m in dirac_modalities},
+                affine_pre_to_post_mm=affine_pre_to_post_mm,
+                single_modality=dirac_single_modality,
+            )
+            disp_img = ants.from_numpy(
+                disp_pre_to_post_mm,
+                origin=t1c_pre_img.origin,
+                spacing=t1c_pre_img.spacing,
+                direction=t1c_pre_img.direction,
+                has_components=True,
+            )
+            ants.image_write(disp_img, str(disp_file))
+            config_params["dirac_model"] = (
+                "t1ce" if dirac_single_modality else "four_modalities"
+            )
+            config_params["dirac_affine_preregistration"] = DIRAC_AFFINE_TRANSFORM
+
+    # Warp t1c, the recurrence segmentation and the additional modalities with the stored field.
+    transformlist = [str(disp_file)]
+    t1c_warped = ants.apply_transforms(
+        fixed=t1c_pre_img, moving=t1c_post_img, transformlist=transformlist
     )
-    initial_fwd_disp = resolve_dirac_disp_field(
-        workdir=recurrence_outfile.parent,
-        suffix="followup_to_preop_disp_voxel",
-    )
-    initial_bwd_disp = resolve_dirac_disp_field(
-        workdir=recurrence_outfile.parent,
-        suffix="preop_to_followup_disp_voxel",
+    ants.image_write(
+        t1c_warped,
+        str(LONGITUDINAL_WARP_SCHEMA.format(base_dir=outdir, modality="t1c")),
     )
 
-    # Step 2: Instance optimization (BRATS_instance_optimization.py)
-    preop_mask = resolve_dirac_disp_field(
-        workdir=recurrence_outfile.parent,
-        suffix="yx_seg",
+    recurrence_seg = ants.image_read(str(recurrence_seg_file))
+    recurrence_warped = ants.apply_transforms(
+        fixed=t1c_pre_img.clone("unsigned int"),
+        moving=recurrence_seg,
+        transformlist=transformlist,
+        interpolator="nearestNeighbor",
     )
-    followup_mask = resolve_dirac_disp_field(
-        workdir=recurrence_outfile.parent,
-        suffix="xy_seg",
-    )
+    ants.image_write(recurrence_warped, str(recurrence_outfile))
 
-    optimized_fwd_disp = (
-        recurrence_outfile.parent / "followup_to_preop_disp_voxel_optimized.nii.gz"
-    )
-    optimize_warp_field(
-        t1c_pre_file=t1c_pre_file,
-        t1c_post_file=t1c_post_file,
-        followup_to_preop_disp=initial_fwd_disp,
-        preop_to_followup_disp=initial_bwd_disp,
-        optimized_followup_to_preop_disp=optimized_fwd_disp,
-        preop_mask_file=preop_mask,
-        followup_mask_file=followup_mask,
-        device=torch.device("cpu" if not torch.cuda.is_available() else "cuda"),
-    )
-
-    # Step 3: Apply transformations (BRATS_apply_longitudinal_warp.py)
-    apply_longitudinal_warp(
-        t1c_pre_file=t1c_pre_file,
-        t1c_post_file=t1c_post_file,
-        recurrence_seg_file=recurrence_seg_file,
-        optimized_followup_to_preop_disp=optimized_fwd_disp,
-        warped_post_out=LONGITUDINAL_WARP_SCHEMA.format(base_dir=outdir, modality="t1c"),
-        recurrence_out=recurrence_outfile,
-    )
-
-    dirac_device = torch.device("cpu" if not torch.cuda.is_available() else "cuda")
     for modality_name, modality_post_file in additional_modalities.items():
-        warp_image_to_preop(
-            image_file=modality_post_file,
-            reference_file=t1c_pre_file,
-            disp_field_file=optimized_fwd_disp,
-            out_file=LONGITUDINAL_WARP_SCHEMA.format(
-                base_dir=outdir, modality=modality_name
-            ),
-            device=dirac_device,
-            mode="bilinear",
+        modality_warped = ants.apply_transforms(
+            fixed=t1c_pre_img,
+            moving=ants.image_read(str(modality_post_file)),
+            transformlist=transformlist,
         )
-
-    # Preserve transformation artifact in conventional output location.
-    shutil.copyfile(
-        src=str(optimized_fwd_disp),
-        dst=str(LONGITUDINAL_DISP_SCHEMA.format(base_dir=outdir)),
-    )
+        ants.image_write(
+            modality_warped,
+            str(LONGITUDINAL_WARP_SCHEMA.format(base_dir=outdir, modality=modality_name)),
+        )
 
     update_config(outdir, CONFIG_STEP_REGISTER_RECURRENCE, config_params)
 

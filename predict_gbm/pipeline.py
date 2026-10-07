@@ -185,6 +185,8 @@ class DicomProcessor(BaseProcessor):
             "affine" and "rigid".
         longitudinal_transform_all (bool): If true, warps all modalities (not just t1c) into
             preop space during longitudinal registration.
+        dirac_single_modality (bool): If true, the "dirac" registration uses the t1c-only
+            checkpoint instead of the four-modality one (t1, t1c, t2, flair of both exams).
     """
 
     def __init__(
@@ -208,6 +210,7 @@ class DicomProcessor(BaseProcessor):
         cuda_device: str = "0",
         registration_algorithm: str = "dirac",
         longitudinal_transform_all: bool = False,
+        dirac_single_modality: bool = False,
     ) -> None:
         super().__init__(patient_id, model_id, outdir, cuda_device)
         self.t1_preop_dir = t1_preop_dir
@@ -229,6 +232,7 @@ class DicomProcessor(BaseProcessor):
         self.dcm2niix_location = dcm2niix_location
         self.registration_algorithm = registration_algorithm
         self.longitudinal_transform_all = longitudinal_transform_all
+        self.dirac_single_modality = dirac_single_modality
 
     def _preprocess_preop(self) -> None:
         preprocessor = DicomPreprocessor(
@@ -280,6 +284,7 @@ class DicomProcessor(BaseProcessor):
             followup_dir=self.outdir_followup,
             registration_algorithm=self.registration_algorithm,
             additional_modalities=additional_modalities,
+            dirac_single_modality=self.dirac_single_modality,
         )
         registrator.run()
 
@@ -325,6 +330,8 @@ class NiftiProcessor(BaseProcessor):
             "affine" and "rigid".
         longitudinal_transform_all (bool): If true, warps all modalities (not just t1c) into
             preop space during longitudinal registration.
+        dirac_single_modality (bool): If true, the "dirac" registration uses the t1c-only
+            checkpoint instead of the four-modality one (t1, t1c, t2, flair of both exams).
     """
 
     def __init__(
@@ -351,6 +358,7 @@ class NiftiProcessor(BaseProcessor):
         is_coregistered: bool = False,
         registration_algorithm: str = "dirac",
         longitudinal_transform_all: bool = False,
+        dirac_single_modality: bool = False,
     ) -> None:
         super().__init__(patient_id, model_id, outdir, cuda_device)
         self.t1_preop_file = t1_preop_file
@@ -375,6 +383,7 @@ class NiftiProcessor(BaseProcessor):
         self.is_coregistered = is_coregistered
         self.registration_algorithm = registration_algorithm
         self.longitudinal_transform_all = longitudinal_transform_all
+        self.dirac_single_modality = dirac_single_modality
         # TODO: This class can handle missing modalities IF the segmentations are provided.
         #      Currently, empty modalities can be handled as empty Path("") inputs.
         #      Implement this more explicitely and check if segmentations are provided properly.
@@ -435,5 +444,6 @@ class NiftiProcessor(BaseProcessor):
             is_coregistered=self.is_coregistered,
             registration_algorithm=self.registration_algorithm,
             additional_modalities=additional_modalities,
+            dirac_single_modality=self.dirac_single_modality,
         )
         registrator.run()

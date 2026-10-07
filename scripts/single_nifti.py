@@ -40,5 +40,10 @@ if __name__ == "__main__":
         # Optional: name -> nifti path, not intensity-normalized (e.g. ADC)
         additional_quantitative_modalities_preop=None,
         additional_quantitative_modalities_followup=None,
+        # Optional: longitudinal registration, "dirac" (default), "syn", "affine" or "rigid".
+        # DIRAC uses t1, t1c, t2 and flair of both exams; dirac_single_modality=True runs
+        # the t1c-only checkpoint instead.
+        registration_algorithm="dirac",
+        dirac_single_modality=False,
     )
     processor.run()

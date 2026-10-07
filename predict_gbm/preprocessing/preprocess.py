@@ -392,7 +392,23 @@ class NiftiPreprocessor(BasePreprocessor):
 
 
 class RegisterRecurrencePipe(BasePipe):
-    """Performs longitudinal registration, transforming followup t1c and recurrence segmentation to preop space."""
+    """
+    Performs longitudinal registration, transforming followup t1c and recurrence segmentation to preop space.
+
+    Parameters:
+        preop_dir (Path): Pre-operative exam output directory (fixed exam).
+        followup_dir (Path): Follow-up exam output directory (moving exam); outputs go to its
+            longitudinal subdirectory.
+        is_coregistered (bool): If true, the exams are already in the same space and the files
+            are copied instead of registered.
+        use_fixed_mask (bool): Pass the pre-operative registration mask to the ANTs algorithms.
+        use_moving_mask (bool): Pass the follow-up registration mask to the ANTs algorithms.
+        registration_algorithm (str): "dirac" (default), "syn", "affine" or "rigid".
+        additional_modalities (Optional[Dict[str, Path]]): Follow-up-space files to warp into
+            preop space alongside t1c, keyed by modality name.
+        dirac_single_modality (bool): Run DIRAC with the t1c-only checkpoint instead of the
+            four-modality one (t1, t1c, t2, flair of both exams).
+    """
 
     def __init__(
         self,
@@ -403,6 +419,7 @@ class RegisterRecurrencePipe(BasePipe):
         use_moving_mask: bool = False,
         registration_algorithm: str = "dirac",
         additional_modalities: Optional[Dict[str, Path]] = None,
+        dirac_single_modality: bool = False,
     ) -> None:
         super().__init__(preop_dir=preop_dir, followup_dir=followup_dir)
         self.is_coregistered = is_coregistered
@@ -410,6 +427,7 @@ class RegisterRecurrencePipe(BasePipe):
         self.use_moving_mask = use_moving_mask
         self.registration_algorithm = registration_algorithm
         self.additional_modalities = additional_modalities or {}
+        self.dirac_single_modality = dirac_single_modality
 
     def run(self) -> None:  # pragma: no cover - wrapper tested via pipeline
         start_time = time.time()
@@ -451,6 +469,14 @@ class RegisterRecurrencePipe(BasePipe):
             recurrence_dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(recurrence_seg_file, recurrence_dst)
         else:
+            # t1, t2 and flair of both exams feed the four-modality DIRAC model.
+            for modality in ("t1", "t2", "flair"):
+                reg_kwargs[f"{modality}_pre_file"] = MODALITY_STRIPPED_SCHEMA.format(
+                    base_dir=self.preop_dir, modality=modality
+                )
+                reg_kwargs[f"{modality}_post_file"] = MODALITY_STRIPPED_SCHEMA.format(
+                    base_dir=self.followup_dir, modality=modality
+                )
             register_recurrence(
                 t1c_pre_file=t1c_pre_file,
                 t1c_post_file=t1c_post_file,
@@ -458,6 +484,7 @@ class RegisterRecurrencePipe(BasePipe):
                 outdir=self.followup_dir,
                 registration_algorithm=self.registration_algorithm,
                 additional_modalities=self.additional_modalities,
+                dirac_single_modality=self.dirac_single_modality,
                 **reg_kwargs,
             )
 

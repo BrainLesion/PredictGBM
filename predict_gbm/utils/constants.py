@@ -93,6 +93,21 @@ PREDICT_GBM_DIR = DATASET_DIR / "predict_gbm.json"
 # MODELS
 GROWTH_MODEL_DIR = DATA_DIR / "models"
 
+# DIRAC longitudinal registration checkpoints (cLapIRN, Mok & Chung, BraTS-Reg 2022), stored
+# next to the growth models under their original filenames: the four-modality checkpoint
+# (t1, t1c, flair, t2 of both exams) from the BraTS-Reg 2022 challenge container and the
+# t1c-only checkpoint from the public DIRAC release.
+DIRAC_CHECKPOINT_FOUR_MODALITIES = (
+    DATA_DIR
+    / "models"
+    / "Brats_NCC_disp_fea6b5_AdaIn64_all4_fbcon_occ01_inv5_a0015_saug_mean_keypt10_affine_ffixed_stagelvl3_112000.pth"
+)
+DIRAC_CHECKPOINT_T1CE = (
+    DATA_DIR
+    / "models"
+    / "Brats_NCC_disp_fea6b5_AdaIn64_t1ce_fbcon_occ01_inv5_a0015_aug_mean_fffixed_github_stagelvl3_64000.pth"
+)
+
 
 # OUTPUT DIRECTOIES
 OUTPUT_FOLDER = "predict_gbm"
@@ -146,13 +161,11 @@ REGISTRATION_MASK_SCHEMA = (
 )
 
 RECURRENCE_SCHEMA = OUTPUT_BASE_SCHEMA / LONGITUDINAL_DIR / "recurrence_preop.nii.gz"
+# The follow-up-to-pre-op transform of every registration algorithm (dirac, syn, affine,
+# rigid), stored as one ANTs/ITK displacement field (vectors in physical LPS mm) on the pre-op
+# grid; apply it with ants.apply_transforms(fixed=<pre-op image>, transformlist=[<this file>]).
 LONGITUDINAL_DISP_SCHEMA = (
     OUTPUT_BASE_SCHEMA / LONGITUDINAL_DIR / "longitudinal_trafo.nii.gz"
-)
-# Linear (rigid/affine) longitudinal registration yields an ANTs .mat transform rather
-# than a displacement field, so it is stored alongside under its native extension.
-LONGITUDINAL_AFFINE_SCHEMA = (
-    OUTPUT_BASE_SCHEMA / LONGITUDINAL_DIR / "longitudinal_trafo.mat"
 )
 LONGITUDINAL_WARP_SCHEMA = (
     OUTPUT_BASE_SCHEMA / LONGITUDINAL_DIR / "{modality}_warped_longitudinal.nii.gz"
@@ -177,6 +190,16 @@ CONFIG_STEP_TUMOR_SEG = "run_brats"
 # Skull stripping is currently always performed via SynthStrip in norm_ss_coregister; this
 # constant is the single source of truth for that name so config and code cannot drift apart.
 SKULL_STRIP_ALGORITHM_SYNTHSTRIP = "SynthStrip"
+
+
+# LONGITUDINAL REGISTRATION
+# Sanity check of the ANTs affine pre-registration in the DIRAC branch of register_recurrence
+# (warning only, no fallback). Limits on the linear part A of the fitted pre-op-to-follow-up
+# matrix and on its translation after removing the rotation-centre term.
+LONGITUDINAL_AFFINE_MAX_ABS_LOG_DET = 0.2
+LONGITUDINAL_AFFINE_SINGULAR_VALUE_RANGE = (0.8, 1.25)
+LONGITUDINAL_AFFINE_MAX_ROTATION_DEG = 15.0
+LONGITUDINAL_AFFINE_MAX_TRANSLATION_MM = 20.0
 
 
 # SCHEMATA - MODEL PREDICTIONS
