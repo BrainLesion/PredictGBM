@@ -5,18 +5,15 @@ import json
 import shutil
 import argparse
 import ants
-import torch
 import nibabel as nib
 import numpy as np
 from pathlib import Path
+from typing import Dict
 from loguru import logger
 from brats import AdultGliomaPreAndPostTreatmentSegmenter
 from brats.constants import AdultGliomaPreAndPostTreatmentAlgorithms
 from predict_gbm.utils.parsing import PatientDataset
 from predict_gbm.utils.constants import (
-    CONFIG_SCHEMA,
-    CONFIG_STEP_REGISTER_RECURRENCE,
-    LONGITUDINAL_AFFINE_SCHEMA,
     LONGITUDINAL_DIR,
     LONGITUDINAL_DISP_SCHEMA,
     LONGITUDINAL_WARP_SCHEMA,
@@ -36,7 +33,6 @@ from predict_gbm.preprocessing import (
     register_recurrence,
 )
 from predict_gbm.preprocessing.norm_ss_coregistration import SUPPORTED_ATLASES
-from predict_gbm.preprocessing.dirac import warp_image_to_preop
 from predict_gbm.utils.utils import update_config
 
 # Atlas the modalities are registered to (and the tissue segmentation is based on). The
@@ -73,15 +69,10 @@ DOSE_MNI_AFFINE_SCHEMA = REGISTRATION_TRAFO_SCHEMA / DOSE_MODALITY / "mni2009c_t
 TREATMENT_SCHEMA = PathSchema("{dose_map_dir}/{patient_id}/{session}/treatment.txt")
 SESSION_LABELS_FILENAME = "session_labels.tsv"
 
-# Intermediate files of the DIRAC longitudinal registration (initial displacement fields,
-# masks and the optimized field) that are removed after registration. The final transform
-# is kept as longitudinal_trafo.nii.gz (LONGITUDINAL_DISP_SCHEMA).
-DIRAC_INTERMEDIATE_PATTERNS = (
-    "dirac_infer_case_*.nii.gz",
-    "followup_to_preop_disp_voxel_optimized.nii.gz",
-)
 # Tissue probability maps co-transformed to preop space alongside t1c and flair.
 LONGITUDINAL_TISSUES = ("gm", "wm", "csf")
+# Modalities of both exams that drive the four-modality DIRAC longitudinal registration.
+DIRAC_MODALITIES = ("t1", "t1c", "t2", "flair")
 
 # Alternative tumor segmentation of the postop exams with the BraTS 2024 post-treatment
 # algorithm (-brats24_postop). The BraTS25 pre-and-post algorithm used by the pipeline tends
@@ -198,6 +189,23 @@ def process_exam(
         )
 
 
+def dirac_modality_files(preop_outdir: Path, exam_outdir: Path) -> Dict[str, Path]:
+    """
+    Skull-stripped t1, t1c, t2 and flair of the preop and the followup exam as the
+    {modality}_pre_file / {modality}_post_file arguments of register_recurrence, which the
+    four-modality DIRAC model needs.
+    """
+    files: Dict[str, Path] = {}
+    for modality in DIRAC_MODALITIES:
+        files[f"{modality}_pre_file"] = MODALITY_STRIPPED_SCHEMA.format(
+            base_dir=preop_outdir, modality=modality
+        )
+        files[f"{modality}_post_file"] = MODALITY_STRIPPED_SCHEMA.format(
+            base_dir=exam_outdir, modality=modality
+        )
+    return files
+
+
 def longitudinal_modalities(exam_outdir: Path) -> dict:
     """
     Additional modalities of an exam that register_recurrence co-transforms to preop space:
@@ -212,15 +220,6 @@ def longitudinal_modalities(exam_outdir: Path) -> dict:
             base_dir=exam_outdir, tissue=tissue
         )
     return modalities
-
-
-def remove_longitudinal_intermediates(exam_outdir: Path) -> None:
-    """Deletes the DIRAC intermediate files (DIRAC_INTERMEDIATE_PATTERNS) of an exam."""
-    longitudinal_dir = RECURRENCE_SCHEMA.format(base_dir=exam_outdir).parent
-    for pattern in DIRAC_INTERMEDIATE_PATTERNS:
-        for f in longitudinal_dir.glob(pattern):
-            f.unlink()
-            logger.debug(f"Removed longitudinal intermediate {f}.")
 
 
 def write_session_labels(
@@ -383,35 +382,19 @@ def warp_to_preop(
 ) -> None:
     """
     Warps an atlas-space image of the exam in exam_outdir to preop space with the exam's
-    longitudinal (followup-to-preop) transform from register_recurrence, read from the
-    exam's config to pick the transform type (DIRAC displacement field, SyN warp or affine).
+    longitudinal (followup-to-preop) transform from register_recurrence. Every registration
+    algorithm stores that transform as one ANTs displacement field (LONGITUDINAL_DISP_SCHEMA).
     Label maps are warped with nearest neighbour interpolation, images linearly.
     """
-    with open(CONFIG_SCHEMA.format(base_dir=exam_outdir), "r") as f:
-        algorithm = json.load(f)[CONFIG_STEP_REGISTER_RECURRENCE]["registration_algorithm"]
     t1c_pre_file = MODALITY_STRIPPED_SCHEMA.format(base_dir=preop_outdir, modality="t1c")
-
-    if algorithm == "dirac":
-        warp_image_to_preop(
-            image_file=image_file,
-            reference_file=t1c_pre_file,
-            disp_field_file=LONGITUDINAL_DISP_SCHEMA.format(base_dir=exam_outdir),
-            out_file=out_file,
-            device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-            mode="nearest" if label_map else "bilinear",
-        )
-    else:
-        trafo_schema = (
-            LONGITUDINAL_DISP_SCHEMA if algorithm == "syn" else LONGITUDINAL_AFFINE_SCHEMA
-        )
-        warped = ants.apply_transforms(
-            fixed=ants.image_read(str(t1c_pre_file)),
-            moving=ants.image_read(str(image_file)),
-            transformlist=[str(trafo_schema.format(base_dir=exam_outdir))],
-            interpolator="nearestNeighbor" if label_map else "linear",
-            defaultvalue=0,
-        )
-        ants.image_write(warped, str(out_file))
+    warped = ants.apply_transforms(
+        fixed=ants.image_read(str(t1c_pre_file)),
+        moving=ants.image_read(str(image_file)),
+        transformlist=[str(LONGITUDINAL_DISP_SCHEMA.format(base_dir=exam_outdir))],
+        interpolator="nearestNeighbor" if label_map else "linear",
+        defaultvalue=0,
+    )
+    ants.image_write(warped, str(out_file))
 
 
 def segment_postop_brats24(
@@ -750,18 +733,13 @@ if __name__ == "__main__":
                 continue
 
             try:
+                # DIRAC (four-modality model): t1, t1c, t2 and flair of both exams.
                 register_recurrence(
-                    t1c_pre_file=MODALITY_STRIPPED_SCHEMA.format(
-                        base_dir=preop_outdir, modality="t1c"
-                    ),
-                    t1c_post_file=MODALITY_STRIPPED_SCHEMA.format(
-                        base_dir=exam_outdir, modality="t1c"
-                    ),
                     recurrence_seg_file=TUMORSEG_SCHEMA.format(base_dir=exam_outdir),
                     outdir=exam_outdir,
                     additional_modalities=longitudinal_modalities(exam_outdir),
+                    **dirac_modality_files(preop_outdir, exam_outdir),
                 )
-                remove_longitudinal_intermediates(exam_outdir)
             except Exception:
                 logger.exception(
                     f"{patient_id}/{dir_name}: recurrence registration failed, skipping."

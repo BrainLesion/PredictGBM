@@ -1,8 +1,4 @@
 import argparse
-import importlib.util
-import os
-import shutil
-import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -19,9 +15,7 @@ from loguru import logger
 from matplotlib.backends.backend_pdf import PdfPages
 
 from predict_gbm.utils.constants import (
-    LONGITUDINAL_DIR,
     MODEL_OUTPUT_DIR,
-    RECURRENCE_SCHEMA,
     SKULL_STRIP_FOLDER,
     TUMOR_SEGMENTATION_FOLDER,
 )
@@ -41,19 +35,6 @@ PREDICTION_THRESHOLD = 0.0
 # Patients excluded by -ten, which combines the first ten remaining patients (by id).
 TEN_EXCLUDED_PATIENTS = ("respond_tum_081",)
 TEN_NUM_PATIENTS = 10
-# -old_dirac reruns the longitudinal registration with the instance optimization of the main
-# branch, i.e. before the fix of commit 437b5e0 on the sailor branch, as a visual sanity
-# check of the fix. The old module is extracted from OLD_DIRAC_COMMIT with git into
-# <data_dir>/OLD_DIRAC_FOLDER (kept there as provenance) and its optimize_warp_field is
-# swapped into register_recurrence; the DIRAC network inference is identical on both
-# commits. Outputs go to <data_dir>/OLD_DIRAC_FOLDER/<patient>/<exam>/PREOP_SPACE_FOLDER,
-# the existing patient folders are only read.
-OLD_DIRAC_COMMIT = "d5a67de5b718e8c35c8e66821d888d0c121167af"
-OLD_DIRAC_FILE = "predict_gbm/preprocessing/dirac.py"
-OLD_DIRAC_FOLDER = "old_dirac"
-OLD_DIRAC_EXAMS = ("postop", "followup")
-UNNORMALIZED_FOLDER = "unnormalized"
-REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # Segmentation legend: 1 necrosis/non-enhancing, 2 edema, 3 enhancing, 4 resection cavity
 # (label 4 only occurs in the longitudinal recurrence segmentations).
@@ -348,189 +329,6 @@ def plot_patient(
     return fig
 
 
-def load_old_dirac_module(old_dirac_dir: Path):
-    """
-    Extracts OLD_DIRAC_FILE at OLD_DIRAC_COMMIT from the git history into old_dirac_dir and
-    imports it as a standalone module (the file has no imports from predict_gbm).
-    """
-    old_dirac_dir.mkdir(parents=True, exist_ok=True)
-    module_file = old_dirac_dir / f"dirac_{OLD_DIRAC_COMMIT[:7]}.py"
-    source = subprocess.run(
-        ["git", "-C", str(REPO_ROOT), "show", f"{OLD_DIRAC_COMMIT}:{OLD_DIRAC_FILE}"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
-    module_file.write_text(source)
-    spec = importlib.util.spec_from_file_location("dirac_old", module_file)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    logger.info(f"Loaded DIRAC of commit {OLD_DIRAC_COMMIT[:7]} from {module_file}.")
-    return module
-
-
-def register_old_dirac(
-    patient_id: str, exam_dirs: Dict[str, Optional[Path]], old_dirac_dir: Path
-) -> None:
-    """
-    Registers the postop and followup exam of a patient to preop with register_recurrence
-    (whose optimize_warp_field has to be replaced by the old one beforehand, see
-    load_old_dirac_module) and warps the T1c and tumor segmentation into preop space, as in
-    scripts/preprocess_respond10.py but without additional modalities. Inputs are read from
-    the exam directories, outputs are written to old_dirac_dir/<patient>/<exam>/preop_space.
-    An exam whose warped T1c already exists there is skipped; a failing registration is
-    logged and leaves its panels empty.
-    """
-    from predict_gbm.preprocessing import register_recurrence
-
-    preop_dir = exam_dirs["preop"]
-    if preop_dir is None:
-        logger.error(f"{patient_id}: no preop exam, skipping registration.")
-        return
-    t1c_pre_file = preop_dir / SKULL_STRIP_FOLDER / "t1c_bet_normalized.nii.gz"
-
-    for exam in OLD_DIRAC_EXAMS:
-        exam_dir = exam_dirs[exam]
-        if exam_dir is None:
-            continue
-        outdir = old_dirac_dir / patient_id / exam_dir.name
-        preop_space_dir = outdir / PREOP_SPACE_FOLDER
-        if (preop_space_dir / "t1c_warped_longitudinal.nii.gz").is_file():
-            logger.info(f"{patient_id}/{exam_dir.name}: old DIRAC output exists, skipping.")
-            continue
-
-        logger.info(f"{patient_id}/{exam_dir.name}: starting old DIRAC registration to preop.")
-        try:
-            register_recurrence(
-                t1c_pre_file=t1c_pre_file,
-                t1c_post_file=exam_dir / SKULL_STRIP_FOLDER / "t1c_bet_normalized.nii.gz",
-                recurrence_seg_file=exam_dir / TUMOR_SEGMENTATION_FOLDER / "tumor_seg.nii.gz",
-                outdir=outdir,
-                registration_algorithm="dirac",
-            )
-        except Exception:
-            logger.exception(f"{patient_id}/{exam_dir.name}: old DIRAC registration failed.")
-            continue
-
-        longitudinal_dir = RECURRENCE_SCHEMA.format(base_dir=outdir).parent
-        assert longitudinal_dir.name == LONGITUDINAL_DIR
-        preop_space_dir.mkdir(parents=True, exist_ok=True)
-        for src in sorted(longitudinal_dir.iterdir()):
-            dst = preop_space_dir / src.name
-            if dst.is_dir():
-                shutil.rmtree(dst)
-            elif dst.exists():
-                dst.unlink()
-            shutil.move(str(src), str(dst))
-        longitudinal_dir.rmdir()
-        logger.info(f"{patient_id}/{exam_dir.name}: saved old DIRAC outputs to {preop_space_dir}.")
-
-
-def resolve_old_dirac_files(
-    patient_dir: Path, exam_dirs: Dict[str, Optional[Path]], old_dirac_dir: Path
-) -> Dict[str, Optional[Path]]:
-    """
-    Resolves the images of the old vs. new DIRAC comparison: the preop T1c and tumor
-    segmentation, and per postop/followup exam the T1c warped to preop space by the old
-    DIRAC (old_dirac_dir) and by the new one (exam directory) as well as the unnormalized T1c
-    in SRI space. Missing files are mapped to None and logged.
-    """
-    files = {}
-    preop_dir = exam_dirs["preop"]
-    if preop_dir is not None:
-        files["preop_t1c"] = preop_dir / SKULL_STRIP_FOLDER / "t1c_bet_normalized.nii.gz"
-        files["preop_seg"] = preop_dir / TUMOR_SEGMENTATION_FOLDER / "tumor_seg.nii.gz"
-    for exam in OLD_DIRAC_EXAMS:
-        exam_dir = exam_dirs[exam]
-        if exam_dir is None:
-            continue
-        files[f"{exam}_t1c_old"] = (
-            old_dirac_dir
-            / patient_dir.name
-            / exam_dir.name
-            / PREOP_SPACE_FOLDER
-            / "t1c_warped_longitudinal.nii.gz"
-        )
-        files[f"{exam}_t1c_new"] = (
-            exam_dir / PREOP_SPACE_FOLDER / "t1c_warped_longitudinal.nii.gz"
-        )
-        files[f"{exam}_t1c_unnormalized"] = exam_dir / UNNORMALIZED_FOLDER / "t1c.nii.gz"
-
-    for key, f in files.items():
-        if not f.is_file():
-            logger.warning(f"{patient_dir.name}: {key} not found ({f}), panel left empty.")
-            files[key] = None
-    return files
-
-
-def plot_old_dirac_patient(
-    patient_id: str,
-    exam_dirs: Dict[str, Optional[Path]],
-    files: Dict[str, Optional[Path]],
-) -> plt.Figure:
-    """
-    Plots one page of a patient with 6 rows (axial, sagittal and coronal view of the postop
-    and followup exam) sliced through the center of mass of the preop tumor core. Columns:
-    stripped preop T1c, T1c of the exam warped to preop space by the old and by the new
-    DIRAC, and the unnormalized (not skull stripped) T1c of the exam in SRI space.
-    """
-    volumes = {key: load_volume(f) if f is not None else None for key, f in files.items()}
-
-    preop_t1c = volumes.get("preop_t1c")
-    preop_seg = volumes.get("preop_seg")
-    if preop_t1c is not None and preop_seg is not None:
-        center = compute_center_of_mass(preop_seg[0], preop_t1c[0], classes=CORE_CLASSES)
-    elif preop_t1c is not None:
-        logger.warning(f"{patient_id}: no preop tumor segmentation, slicing volume center.")
-        center = tuple(s // 2 for s in preop_t1c[0].shape)
-    else:
-        center = (120, 120, 77)  # SRI atlas center, only used to mark the missing panels
-
-    # Column titles are repeated above the first row of every exam, naming that exam.
-    def col_titles(exam: str) -> List[str]:
-        return [
-            "T1c preop\n(stripped)",
-            f"T1c {exam}\nPre-op space (old DIRAC)",
-            f"T1c {exam}\nPre-op space (new DIRAC)",
-            f"T1c {exam}\nSRI space (unnormalized)",
-        ]
-
-    n_rows = len(OLD_DIRAC_EXAMS) * len(VIEWS)
-    n_cols = len(col_titles(OLD_DIRAC_EXAMS[0]))
-
-    fig, axs = plt.subplots(n_rows, n_cols, figsize=(3.4 * n_cols, 2.7 * n_rows))
-    for exam_ind, exam in enumerate(OLD_DIRAC_EXAMS):
-        exam_dir = exam_dirs[exam]
-        exam_name = exam_dir.name if exam_dir is not None else f"{exam} (missing)"
-        columns = [
-            preop_t1c,
-            volumes.get(f"{exam}_t1c_old"),
-            volumes.get(f"{exam}_t1c_new"),
-            volumes.get(f"{exam}_t1c_unnormalized"),
-        ]
-        for view_ind, view in enumerate(VIEWS):
-            row = exam_ind * len(VIEWS) + view_ind
-            for col, volume in enumerate(columns):
-                show_panel(axs[row, col], view, center, volume)
-            axs[row, 0].set_ylabel(
-                f"{exam_name}\n{view}", fontsize=13, fontweight="bold", labelpad=12
-            )
-        for col, title in enumerate(col_titles(exam)):
-            axs[exam_ind * len(VIEWS), col].set_title(
-                title, fontsize=12, fontweight="bold", pad=12
-            )
-
-    fig.suptitle(
-        f"{patient_id}   |   old (commit {OLD_DIRAC_COMMIT[:7]}) vs. new DIRAC\n"
-        "CoM of preop tumor core",
-        fontsize=16,
-        fontweight="bold",
-        y=0.995,
-    )
-    fig.tight_layout(rect=[0, 0, 1, 0.965], h_pad=1.5)
-    return fig
-
-
 if __name__ == "__main__":
     # Plots one pdf page per patient of the respond10 dataset: 9 rows (axial, sagittal,
     # coronal view of the preop, postop and followup exam) through the center of mass of the
@@ -540,16 +338,10 @@ if __name__ == "__main__":
     # and all pages are merged into <outdir>/respond10_visualization.pdf. With -ten only the
     # first ten patients by id (excluding TEN_EXCLUDED_PATIENTS) are plotted, into
     # <outdir>/<patient>_ten.pdf and <outdir>/respond10_visualization_ten.pdf.
-    # With -old_dirac the postop and followup exams are instead registered to preop with the
-    # old DIRAC instance optimization (see OLD_DIRAC_COMMIT) into <data_dir>/old_dirac, and
-    # one merged pdf <outdir>/respond10_visualization_old_dirac.pdf with 6 rows per patient
-    # (axial, sagittal, coronal view of the postop and followup exam) compares the old and
-    # new registration next to the stripped preop T1c and the unnormalized T1c of the exam.
     #
     # Examples:
     # python scripts/visualize_respond_10.py -patients respond_tum_001 respond_tum_002
     # python scripts/visualize_respond_10.py -ten
-    # nohup python -u scripts/visualize_respond_10.py -old_dirac -cuda_device 0 > old_dirac.out 2>&1 &
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-data_dir",
@@ -586,32 +378,12 @@ if __name__ == "__main__":
             "-patients the selection is applied to the given patients."
         ),
     )
-    parser.add_argument(
-        "-old_dirac",
-        action="store_true",
-        help=(
-            "Register the postop and followup exams to preop with the old DIRAC instance "
-            f"optimization (commit {OLD_DIRAC_COMMIT[:7]}) into <data_dir>/{OLD_DIRAC_FOLDER} "
-            "(exams with existing output are skipped) and plot the old vs. new registration "
-            f"into <outdir>/respond10_visualization_old_dirac.pdf, where <outdir> defaults to "
-            f"<data_dir>/{OLD_DIRAC_FOLDER}/visualization. Nothing else is plotted."
-        ),
-    )
-    parser.add_argument(
-        "-cuda_device", type=str, default="0", help="GPU id for the -old_dirac registration."
-    )
     args = parser.parse_args()
 
     data_dir = Path(args.data_dir)
-    old_dirac_dir = data_dir / OLD_DIRAC_FOLDER
-    if args.outdir:
-        outdir = Path(args.outdir)
-    elif args.old_dirac:
-        outdir = old_dirac_dir / "visualization"
-    else:
-        outdir = data_dir / "visualization"
+    outdir = Path(args.outdir) if args.outdir else data_dir / "visualization"
     outdir.mkdir(parents=True, exist_ok=True)
-    suffix = "_old_dirac" if args.old_dirac else "_ten" if args.ten else ""
+    suffix = "_ten" if args.ten else ""
     merged_file = outdir / f"respond10_visualization{suffix}.pdf"
 
     patient_dirs = sorted(d for d in data_dir.iterdir() if d.is_dir() and d.name.startswith("respond_tum_"))
@@ -626,33 +398,6 @@ if __name__ == "__main__":
             p for p in patient_dirs if p.name not in TEN_EXCLUDED_PATIENTS
         ][:TEN_NUM_PATIENTS]
     logger.info(f"Plotting {len(patient_dirs)} patients from {data_dir} to {outdir}.")
-
-    if args.old_dirac:
-        os.environ["CUDA_VISIBLE_DEVICES"] = args.cuda_device
-        from predict_gbm.preprocessing import norm_ss_coregistration
-
-        # register_recurrence looks optimize_warp_field up in its module, so replacing the
-        # attribute makes it run the old instance optimization (inference is unchanged).
-        old_dirac = load_old_dirac_module(old_dirac_dir)
-        norm_ss_coregistration.optimize_warp_field = old_dirac.optimize_warp_field
-
-        plotted = 0
-        with PdfPages(str(merged_file)) as merged_pdf:
-            for patient_dir in patient_dirs:
-                patient_id = patient_dir.name
-                try:
-                    exam_dirs = find_exam_dirs(patient_dir)
-                    register_old_dirac(patient_id, exam_dirs, old_dirac_dir)
-                    files = resolve_old_dirac_files(patient_dir, exam_dirs, old_dirac_dir)
-                    fig = plot_old_dirac_patient(patient_id, exam_dirs, files)
-                    merged_pdf.savefig(fig)
-                    plt.close(fig)
-                    plotted += 1
-                    logger.info(f"{patient_id}: plotted old vs. new DIRAC.")
-                except Exception:
-                    logger.exception(f"{patient_id}: old DIRAC step failed, skipping patient.")
-        logger.info(f"Finished plotting {plotted} patients. Merged pdf saved to {merged_file}.")
-        raise SystemExit(0)
 
     plotted = 0
     with PdfPages(str(merged_file)) as merged_pdf:

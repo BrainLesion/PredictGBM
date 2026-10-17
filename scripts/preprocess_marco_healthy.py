@@ -34,7 +34,7 @@ from predict_gbm.prediction import predict_tumor_growth
 from predict_gbm.utils.constants import (
     ATLAS_UNSTRIPPED_SCHEMA,
     BRAIN_MASK_SCHEMA,
-    LONGITUDINAL_AFFINE_SCHEMA,
+    LONGITUDINAL_DISP_SCHEMA,
     LONGITUDINAL_WARP_SCHEMA,
     MODALITY_STRIPPED_SCHEMA,
     PREDICTION_OUTPUT_SCHEMA,
@@ -466,13 +466,13 @@ def warp_predictions_to_preop(
     override: bool = False,
 ) -> None:
     """
-    Warps the growth predictions of a follow-up exam into pre-operative space, reusing the affine
-    transform stored by the earlier longitudinal registration. This is the deferred counterpart to
+    Warps the growth predictions of a follow-up exam into pre-operative space, reusing the
+    transform (displacement field) stored by the earlier longitudinal registration. This is the deferred counterpart to
     register_followup_to_preop, which warps the predictions right away: it adds the predictions to
     an already registered exam without recomputing the registration, so the tumor segmentation and
     the mri sequences keep the exact transform they were warped with.
     """
-    transform_file = LONGITUDINAL_AFFINE_SCHEMA.format(base_dir=followup_outdir)
+    transform_file = LONGITUDINAL_DISP_SCHEMA.format(base_dir=followup_outdir)
     if not transform_file.exists():
         logger.warning(
             f"{followup_outdir}: no longitudinal transform ({transform_file}), "
@@ -516,12 +516,12 @@ def warp_tissue_seg_to_preop(
     preop_outdir: Path, exam_outdir: Path, override: bool = False
 ) -> None:
     """
-    Warps the gm/wm/csf probability maps of an exam into pre-operative space, reusing the affine
-    transform stored by the longitudinal registration. Like warp_predictions_to_preop, this is a
+    Warps the gm/wm/csf probability maps of an exam into pre-operative space, reusing the
+    transform (displacement field) stored by the longitudinal registration. Like warp_predictions_to_preop, this is a
     deferred step that adds maps to an already registered exam without recomputing the
     registration, so they carry the exact transform the mri sequences were warped with.
     """
-    transform_file = LONGITUDINAL_AFFINE_SCHEMA.format(base_dir=exam_outdir)
+    transform_file = LONGITUDINAL_DISP_SCHEMA.format(base_dir=exam_outdir)
     if not transform_file.exists():
         logger.warning(
             f"{exam_outdir}: no longitudinal transform ({transform_file}), "
@@ -610,7 +610,7 @@ def warp_atropos_tissue_seg_to_preop(
     warp_tissue_seg_to_preop apart from those two directories, and in particular it reuses the very
     same longitudinal transform, so both variants are warped exactly alike.
     """
-    transform_file = LONGITUDINAL_AFFINE_SCHEMA.format(base_dir=exam_outdir)
+    transform_file = LONGITUDINAL_DISP_SCHEMA.format(base_dir=exam_outdir)
     if not transform_file.exists():
         logger.warning(
             f"{exam_outdir}: no longitudinal transform ({transform_file}), "

@@ -54,6 +54,8 @@ CAVITY_RELABEL = 3
 CTV_MARGIN = 15
 # Modalities (besides t1c) of the postop/followup exams that are warped into preop space.
 ADDITIONAL_WARP_MODALITIES = ("flair",)
+# Modalities of both exams that drive the four-modality DIRAC longitudinal registration.
+DIRAC_MODALITIES = ("t1", "t1c", "t2", "flair")
 
 # Growth models run on the preop exams. pinngbm is listed last since it is by far the
 # slowest model, so that the faster ones are already done if the run is interrupted.
@@ -313,23 +315,33 @@ def predict_growth(
             )
 
 
-def register_to_preop(exam_dir: Path, preop_dir: Path) -> None:
+def register_to_preop(exam_dir: Path, preop_dir: Path, single_modality: bool = False) -> None:
     """
     Registers an exam (postop/followup) to preop with DIRAC and warps its tumor segmentation,
-    t1c and ADDITIONAL_WARP_MODALITIES into preop space. All outputs of the registration
-    step, including the DIRAC displacement fields, are moved into <exam_dir>/preop_space.
+    t1c and ADDITIONAL_WARP_MODALITIES into preop space. The four-modality DIRAC model is
+    driven by the DIRAC_MODALITIES of both exams; with single_modality the t1c-only model is
+    used instead. All outputs of the registration step, including the displacement field,
+    are moved into <exam_dir>/preop_space.
     """
     additional_modalities = {
         modality: BET_NORMALIZED_SCHEMA.format(base_dir=exam_dir, modality=modality)
         for modality in ADDITIONAL_WARP_MODALITIES
     }
+    dirac_files: Dict[str, Path] = {}
+    for modality in DIRAC_MODALITIES:
+        dirac_files[f"{modality}_pre_file"] = BET_NORMALIZED_SCHEMA.format(
+            base_dir=preop_dir, modality=modality
+        )
+        dirac_files[f"{modality}_post_file"] = BET_NORMALIZED_SCHEMA.format(
+            base_dir=exam_dir, modality=modality
+        )
     register_recurrence(
-        t1c_pre_file=BET_NORMALIZED_SCHEMA.format(base_dir=preop_dir, modality="t1c"),
-        t1c_post_file=BET_NORMALIZED_SCHEMA.format(base_dir=exam_dir, modality="t1c"),
         recurrence_seg_file=TUMORSEG_SCHEMA.format(base_dir=exam_dir),
         outdir=exam_dir,
         registration_algorithm="dirac",
+        dirac_single_modality=single_modality,
         additional_modalities=additional_modalities,
+        **dirac_files,
     )
 
     longitudinal_dir = RECURRENCE_SCHEMA.format(base_dir=exam_dir).parent
@@ -399,6 +411,14 @@ if __name__ == "__main__":
         nargs="+",
         default=None,
         help="Optional list of patient ids to process (e.g. respond_tum_001). Default: all.",
+    )
+    parser.add_argument(
+        "-dirac_single_modality",
+        action="store_true",
+        help=(
+            "Run the t1c-only DIRAC model for the longitudinal registration instead of the "
+            f"four-modality model, which needs {list(DIRAC_MODALITIES)} of both exams."
+        ),
     )
     args = parser.parse_args()
 
@@ -471,7 +491,7 @@ if __name__ == "__main__":
 
             logger.info(f"{patient_id}/{exam_dir.name}: starting DIRAC registration to preop.")
             try:
-                register_to_preop(exam_dir, preop_dir)
+                register_to_preop(exam_dir, preop_dir, args.dirac_single_modality)
             except Exception:
                 logger.exception(
                     f"{patient_id}/{exam_dir.name}: DIRAC registration failed, skipping exam."

@@ -93,7 +93,7 @@ def register_postop_to_sri(postop_t1c_file: Path, work_dir: Path) -> Path:
         bet_mask_output_path=str(BRAIN_MASK_SCHEMA.format(base_dir=work_dir)),
     )
     registrator = ANTsRegistrator(transformation_params={"defaultvalue": 0})
-    LONGITUDINAL_WARP_SCHEMA,reprocessor = AtlasCentricPreprocessor(
+    preprocessor = AtlasCentricPreprocessor(
         center_modality=center,
         moving_modalities=[],
         registrator=registrator,
@@ -143,6 +143,7 @@ def register_postop_to_preop(
     """
     Registers the post-op t1c (in SRI space) to the pre-op t1c with the DIRAC algorithm of
     register_recurrence and warps the SRI-space dose map into pre-op space alongside it.
+    Only a t1c is available per exam, so the t1c-only DIRAC model is used.
 
     The DIRAC instance optimization expects intensity-normalized images (its NCC loss
     diverges on raw scanner intensities), so the registration is driven by percentile
@@ -170,6 +171,7 @@ def register_postop_to_preop(
             recurrence_seg_file=placeholder_seg_file,
             outdir=work_dir,
             registration_algorithm="dirac",
+            dirac_single_modality=True,
             additional_modalities={
                 "t1c_raw": postop_sri_t1c_file,
                 "rtdose": dose_sri_file,
