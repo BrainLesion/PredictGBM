@@ -18,35 +18,27 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 #
-# The four-modality checkpoint from the BraTS-Reg 2022 container is redistributed
+# The four-modality BraTS-Reg 2022 checkpoint is redistributed
 # under MIT with the author's written permission (T. Mok, 7 Oct 2026).
 
 
-"""DIRAC-based longitudinal registration of a follow-up (post-operative) exam to the pre-operative exam.
+"""Longitudinal registration of a follow-up (post-operative) exam to the pre-operative exam.
 
-Port of the inference path of the BraTS-Reg 2022 winning entry (Mok & Chung: conditional
-laplacian pyramid network plus instance optimization) for the "dirac" registration_algorithm of
-norm_ss_coregistration.register_recurrence:
-
-  1. Nifti loading and orientation helpers. Images are processed in LPS voxel order, the
-     orientation of the BraTS-Reg data the challenge container runs on, and results are mapped
-     back to the stored orientation.
-  2. Network building blocks (AdaIn conditioning, spatial transforms) and the three-level
-     laplacian registration network (MICCAI 2021 LDR, cLapIRN weights).
+  1. Nifti loading and orientation helpers. Images are processed in LPS voxel order.
+  2. Network building blocks and the three-level laplacian registration network
   3. The hand-off from the ANTs affine pre-registration to F.affine_grid sampling grids, the
      network step and the composition of affine and network field.
-  4. The container's bidirectional instance optimization: the total field on a control grid,
-     occlusion masks recomputed every iteration, NCC on t1c and t2.
+  4. Bidirectional instance optimization
   5. run_dirac_registration, the entry point called by norm_ss_coregistration, which returns
      the follow-up-to-pre-op displacement in physical millimetres.
 
-Conventions. Tensors use the container layout (1, C, n0, n1, n2) with the array axes of the
+Conventions. Tensors have the layout (1, C, n0, n1, n2) with the array axes of the
 LPS-reoriented image. Fields are in the normalized [-1, 1] coordinates of F.grid_sample with
 align_corners=True, channel 0 belonging to the last array axis, until the final conversion.
 X is the pre-op (baseline) image and Y the follow-up; F_Y_X is the field on the pre-op grid
-that resamples the follow-up onto it, F_X_Y the opposite direction (ported container code
-keeps these names). The affine passed in by register_recurrence, affine_pre_to_post_mm, maps
-pre-op physical points (LPS mm) to follow-up physical points. This module does not import ANTs.
+that resamples the follow-up onto it, F_X_Y the opposite direction. The affine passed in by
+register_recurrence, affine_pre_to_post_mm, maps pre-op physical points (LPS mm) to follow-up
+physical points. This module does not import ANTs.
 """
 
 import os
@@ -75,24 +67,22 @@ IMGSHAPE_2 = tuple(s // 2 for s in IMGSHAPE)
 RANGE_FLOW = 0.4
 START_CHANNEL = 6
 NUM_CBLOCK = 5
-# Conditioning value of the network (the smoothness weight it was conditioned on), as used by the
-# challenge container for inference; the same value is used with both checkpoints.
 REG_CODE = 0.4
 
 # Network input channels per image, in order; the two images are concatenated inside the network.
 MODALITIES_FOUR = ("t1", "t1c", "flair", "t2")
 MODALITIES_SINGLE = ("t1c",)
-# Channels of the instance-optimization similarity term (container: t1ce and t2).
+# Channels of the instance-optimization similarity term.
 SIMILARITY_MODALITIES_FOUR = ("t1c", "t2")
 SIMILARITY_MODALITIES_SINGLE = ("t1c",)
 
-# Grid of the BraTS-Reg data the container runs on. The network sees the images squeezed from
-# this grid to IMGSHAPE, so another grid changes the voxel aspect ratio it was trained with.
+# The network sees the images squeezed from this grid to IMGSHAPE, so another grid changes the
+# voxel aspect ratio it was trained with.
 BRATSREG_GRID = (240, 240, 155)
 LPS_AXCODES = ("L", "P", "S")
 
-# Instance-optimization schedule of the container (my_script_pytorch.py:277-327): five levels
-# from an 80^3 image to the native grid, control grids from 32^3 to 64^3.
+# Instance-optimization schedule: five levels from an 80^3 image to the native grid,
+# control grids from 32^3 to 64^3.
 IO_MIN_SIZE = 80
 IO_CONTROL_GRID_RANGE = (32, 64)
 IO_ITERATIONS = (150, 100, 100, 100, 50)
@@ -104,7 +94,7 @@ IO_OCCLUSION_MARGIN = 0.015
 
 
 # -----------------------------------------------------------------------------
-# Grid helper and intensity normalization (DIRAC Functions.py)
+# Grid helper and intensity normalization
 # -----------------------------------------------------------------------------
 
 
@@ -121,9 +111,9 @@ def generate_grid_unit(imgshape):
 def model_grid(imgshape: Sequence[int]) -> torch.Tensor:
     """Identity grid (1, n0, n1, n2, 3) for the network classes as a float32 CUDA tensor.
 
-    Uses the container's numpy construction rather than identity_grid: the two differ by one
-    float32 ulp in part of the entries, and only this one reproduces the container's network
-    output bit for bit.
+    Uses the numpy construction rather than identity_grid: the two differ by one float32 ulp
+    in part of the entries, and only this one reproduces the original network output bit
+    for bit.
     """
     grid = generate_grid_unit(imgshape)
     return torch.from_numpy(np.reshape(grid, (1,) + grid.shape)).cuda().float()
@@ -1019,9 +1009,8 @@ def affine_sampling_thetas(
     """The two sampling matrices derived from the ANTs affine (section 3 step 4 of the plan).
 
     Returns (theta_sample_post_on_pre_grid, theta_sample_pre_on_post_grid): the first samples
-    the follow-up on the pre-op grid and feeds the F_Y_X direction (the container's
-    best_affine_theta_yx), the second uses the inverted matrix, samples the pre-op on the
-    follow-up grid and feeds the F_X_Y direction (best_affine_theta_xy).
+    the follow-up on the pre-op grid and feeds the F_Y_X direction, the second uses the
+    inverted matrix, samples the pre-op on the follow-up grid and feeds the F_X_Y direction.
     """
     theta_sample_post_on_pre_grid = sampling_theta(
         pre_index_to_mm, pre_shape, post_index_to_mm, post_shape, affine_pre_to_post_mm
@@ -1043,12 +1032,12 @@ def identity_grid(shape: Sequence[int], device: torch.device) -> torch.Tensor:
 
 
 # -----------------------------------------------------------------------------
-# Network step (container my_script_pytorch.py:214-275)
+# Network step
 # -----------------------------------------------------------------------------
 
 
 def build_network(in_channel: int, device: torch.device) -> nn.Module:
-    """The three-level network with the inference configuration of the container."""
+    """The three-level network in its inference configuration."""
     model_lvl1 = Miccai2021_LDR_laplacian_unit_disp_add_AdaIn_lvl1(
         in_channel,
         3,
@@ -1101,7 +1090,7 @@ def run_network(
     X_ori, Y_ori: pre-op and follow-up stacks (1, C, n0, n1, n2) at native resolution. The
     image being warped is sampled through its affine grid, which also brings it to IMGSHAPE;
     the other image is resized. Returns (deep_F_X_Y, deep_F_Y_X), the combined fields at
-    IMGSHAPE in normalized coordinates (the container's compose_F_X_Y / compose_F_Y_X).
+    IMGSHAPE in normalized coordinates.
     """
     device = X_ori.device
     size = (1, 1) + IMGSHAPE
@@ -1136,7 +1125,7 @@ def run_network(
 
 
 # -----------------------------------------------------------------------------
-# Instance optimization (container my_script_pytorch.py:277-433, bratsreg_model_selected.py)
+# Instance optimization
 # -----------------------------------------------------------------------------
 
 
@@ -1220,8 +1209,7 @@ class L2R_Instance_opt_grid_bidirection(nn.Module):
 def pyramid_sizes(
     min_size: Sequence[int], max_size: Sequence[int], levels: int
 ) -> list[tuple[int, int, int]]:
-    """Per-axis linear spacing from min_size to max_size, truncated to integers like the
-    container's np.linspace(..., dtype=np.int16)."""
+    """Per-axis linear spacing from min_size to max_size, truncated to integers."""
     axes = [
         np.floor(np.linspace(lo, hi, num=levels)).astype(int)
         for lo, hi in zip(min_size, max_size)
@@ -1242,7 +1230,7 @@ def dirac_instance_optimization(
     control_grid_range: tuple[int, int] = IO_CONTROL_GRID_RANGE,
     ncc_win: int = IO_NCC_WIN,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Bidirectional instance optimization of the combined fields, as in the container.
+    """Bidirectional instance optimization of the combined fields.
 
     X, Y: pre-op and follow-up similarity images (1, C, n0, n1, n2) at native resolution
     (t1c + t2, or t1c alone), min-max normalized; the foreground masks are taken from
@@ -1367,7 +1355,6 @@ def dirac_instance_optimization(
             loss_inverse = torch.mean(norm_diff_fw * mask_xy) + torch.mean(
                 norm_diff_bw * mask_yx
             )
-            # (the container's occlusion-area term is weighted 0 and therefore omitted)
 
             # smoothness of the total fields in voxel units of this level
             _, _, x, y, z = F_X_Y.shape
@@ -1394,8 +1381,7 @@ def dirac_instance_optimization(
             total_loss.backward()
             optimizer.step()
 
-        # The container hands the parameter tensors on, which the optimizer kept updating:
-        # the next level starts from the last iterate, not from the best one.
+        # The next level starts from the last iterate, not from the best one.
         best_theta_xy = io_model.disp_xy.detach()
         best_theta_yx = io_model.disp_yx.detach()
         if best_F_X_Y is None:  # no iteration at this level
@@ -1417,7 +1403,7 @@ def dirac_instance_optimization(
 
 def field_to_voxel_displacement(flow: torch.Tensor) -> np.ndarray:
     """(1, 3, n0, n1, n2) normalized field -> (n0, n1, n2, 3) displacement in voxels with the
-    components in array-axis order (container my_script_pytorch.py:435-439)."""
+    components in array-axis order."""
     _, _, h, w, d = flow.shape
     f = flow[0].detach().cpu().numpy()
     disp = np.empty((h, w, d, 3), dtype=np.float32)

@@ -50,7 +50,7 @@ ANTS_REGISTRATION_TRANSFORMS = {
     "rigid": "Rigid",
 }
 SUPPORTED_REGISTRATION_ALGORITHMS = ("dirac",) + tuple(ANTS_REGISTRATION_TRANSFORMS)
-# ANTs transform fitted on t1c before DIRAC, without masks (as in the challenge container).
+# ANTs transform fitted on t1c before DIRAC, without masks.
 DIRAC_AFFINE_TRANSFORM = "Affine"
 
 
@@ -311,12 +311,8 @@ def norm_ss_coregister(
 
 def read_ants_affine_pre_to_post_mm(transform_file: Path) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Read the affine written by ants.registration(fixed=pre-op, moving=follow-up) as a 4x4 matrix.
-
-    The ITK transform maps pre-op physical points to follow-up physical points (it is what
-    resamples the follow-up onto the pre-op grid): p_post = A (p_pre - c) + c + t with the
-    matrix A (first nine parameters, row-major), the translation t (last three) and the
-    rotation centre c (fixed parameters), so the offset column of the matrix is t + c - A c.
+    Read the affine written by ants.registration(fixed=pre-op, moving=follow-up) as a 4x4
+    matrix together with its rotation centre.
 
     Parameters:
         transform_file (Path): The ANTs affine transform file (0GenericAffine.mat).
@@ -344,13 +340,6 @@ def read_ants_affine_pre_to_post_mm(transform_file: Path) -> Tuple[np.ndarray, n
 def check_affine_plausibility(affine_pre_to_post_mm: np.ndarray, centre: np.ndarray) -> None:
     """
     Log a warning for every implausible property of the affine pre-registration.
-
-    Decomposes the linear part A of affine_pre_to_post_mm and warns when |log det A| exceeds
-    LONGITUDINAL_AFFINE_MAX_ABS_LOG_DET, a singular value of A lies outside
-    LONGITUDINAL_AFFINE_SINGULAR_VALUE_RANGE, the rotation angle of the polar decomposition
-    exceeds LONGITUDINAL_AFFINE_MAX_ROTATION_DEG, or the translation after removing the
-    rotation-centre term exceeds LONGITUDINAL_AFFINE_MAX_TRANSLATION_MM. Warning only; the
-    matrix is used unchanged.
 
     Parameters:
         affine_pre_to_post_mm (np.ndarray): 4x4 matrix from read_ants_affine_pre_to_post_mm.
@@ -423,9 +412,7 @@ def register_recurrence(
 
     Every algorithm stores the follow-up-to-pre-op transform as one ANTs displacement field
     (longitudinal_trafo.nii.gz) and warps t1c, the recurrence segmentation and the additional
-    modalities with it. With "dirac", an ANTs affine on t1c is fitted first; the DIRAC network
-    (four modalities, or t1c alone with dirac_single_modality) and its instance optimization
-    refine it and the combined transform is stored.
+    modalities with it.
 
     Parameters:
         t1c_pre_file (Path): Path to the pre-operative T1c image.
@@ -547,6 +534,8 @@ def register_recurrence(
                 **reg_kwargs,
             )
             # One dense field holding all forward transforms (e.g. affine + warp for syn).
+            # With compose set, apply_transforms writes the composed displacement field
+            # instead of a warped image and returns the path of that file.
             composed_file = ants.apply_transforms(
                 fixed=t1c_pre_img,
                 moving=t1c_post_img,
@@ -570,8 +559,8 @@ def register_recurrence(
             check_affine_plausibility(affine_pre_to_post_mm, centre)
 
             disp_pre_to_post_mm = run_dirac_registration(
-                pre_files={m: pre_files[m] for m in dirac_modalities},
-                post_files={m: post_files[m] for m in dirac_modalities},
+                pre_files=pre_files,
+                post_files=post_files,
                 affine_pre_to_post_mm=affine_pre_to_post_mm,
                 single_modality=dirac_single_modality,
             )

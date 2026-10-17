@@ -443,7 +443,8 @@ class TestNormSsCoregistration(unittest.TestCase):
 
         dirac_kwargs = run_dirac_mock.call_args.kwargs
         self.assertTrue(dirac_kwargs["single_modality"])
-        self.assertEqual(set(dirac_kwargs["pre_files"]), {"t1c"})
+        self.assertEqual(dirac_kwargs["pre_files"]["t1c"], pre)
+        self.assertEqual(dirac_kwargs["post_files"]["t1c"], post)
         swi_warped_file = LONGITUDINAL_WARP_SCHEMA.format(
             base_dir=self.outdir, modality="swi"
         )

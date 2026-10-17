@@ -93,10 +93,6 @@ PREDICT_GBM_DIR = DATASET_DIR / "predict_gbm.json"
 # MODELS
 GROWTH_MODEL_DIR = DATA_DIR / "models"
 
-# DIRAC longitudinal registration checkpoints (cLapIRN, Mok & Chung, BraTS-Reg 2022), stored
-# next to the growth models under their original filenames: the four-modality checkpoint
-# (t1, t1c, flair, t2 of both exams) from the BraTS-Reg 2022 challenge container and the
-# t1c-only checkpoint from the public DIRAC release.
 DIRAC_CHECKPOINT_FOUR_MODALITIES = (
     DATA_DIR
     / "models"
@@ -161,9 +157,7 @@ REGISTRATION_MASK_SCHEMA = (
 )
 
 RECURRENCE_SCHEMA = OUTPUT_BASE_SCHEMA / LONGITUDINAL_DIR / "recurrence_preop.nii.gz"
-# The follow-up-to-pre-op transform of every registration algorithm (dirac, syn, affine,
-# rigid), stored as one ANTs/ITK displacement field (vectors in physical LPS mm) on the pre-op
-# grid; apply it with ants.apply_transforms(fixed=<pre-op image>, transformlist=[<this file>]).
+
 LONGITUDINAL_DISP_SCHEMA = (
     OUTPUT_BASE_SCHEMA / LONGITUDINAL_DIR / "longitudinal_trafo.nii.gz"
 )
@@ -177,8 +171,6 @@ STANDARD_PLAN_SCHEMA = (
 
 
 # CONFIG
-# Central record of per-step parameters, written by update_config (predict_gbm.utils.utils)
-# into a single predict_gbm_config.json per outdir. Step names below are the top-level keys.
 CONFIG_FILENAME = "predict_gbm_config.json"
 CONFIG_SCHEMA = OUTPUT_BASE_SCHEMA / CONFIG_FILENAME
 
@@ -192,10 +184,7 @@ CONFIG_STEP_TUMOR_SEG = "run_brats"
 SKULL_STRIP_ALGORITHM_SYNTHSTRIP = "SynthStrip"
 
 
-# LONGITUDINAL REGISTRATION
-# Sanity check of the ANTs affine pre-registration in the DIRAC branch of register_recurrence
-# (warning only, no fallback). Limits on the linear part A of the fitted pre-op-to-follow-up
-# matrix and on its translation after removing the rotation-centre term.
+# LONGITUDINAL REGISTRATION SANITY CHECK
 LONGITUDINAL_AFFINE_MAX_ABS_LOG_DET = 0.2
 LONGITUDINAL_AFFINE_SINGULAR_VALUE_RANGE = (0.8, 1.25)
 LONGITUDINAL_AFFINE_MAX_ROTATION_DEG = 15.0

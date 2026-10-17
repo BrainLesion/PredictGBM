@@ -72,7 +72,7 @@ def invert_field(flow: torch.Tensor, n_iter: int = 30) -> torch.Tensor:
 
 class TestDiracInstanceOptimization(unittest.TestCase):
     """X is the pre-op image, Y the follow-up; F_Y_X on the pre-op grid samples the follow-up,
-    F_X_Y the opposite direction (the container's naming, see dirac.py)."""
+    F_X_Y the opposite direction (see dirac.py)."""
 
     def setUp(self) -> None:
         torch.manual_seed(0)
