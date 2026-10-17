@@ -2,12 +2,17 @@ from .preprocess import DicomPreprocessor, NiftiPreprocessor
 from .conversion import dicom_to_nifti
 from .tumor_segmentation import run_brats
 from .tissue_segmentation import run_tissue_seg
-from .norm_ss_coregistration import norm_ss_coregister, register_recurrence
+from .norm_ss_coregistration import (
+    longitudinal_transform_file,
+    norm_ss_coregister,
+    register_recurrence,
+)
 
 __all__ = [
     "DicomPreprocessor",
     "NiftiPreprocessor",
     "dicom_to_nifti",
+    "longitudinal_transform_file",
     "norm_ss_coregister",
     "register_recurrence",
     "run_brats",

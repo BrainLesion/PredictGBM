@@ -12,6 +12,7 @@ from predict_gbm.preprocessing.norm_ss_coregistration import (
     initialize_moving_modalities,
     norm_ss_coregister,
     register_recurrence,
+    longitudinal_transform_file,
 )
 from brainles_preprocessing.modality import Modality, CenterModality
 from brainles_preprocessing.normalization.percentile_normalizer import (
@@ -21,6 +22,7 @@ from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtract
 from predict_gbm.utils.constants import (
     ATLAS_STRIPPED_SCHEMA,
     ATLAS_UNSTRIPPED_SCHEMA,
+    LONGITUDINAL_AFFINE_SCHEMA,
     LONGITUDINAL_DISP_SCHEMA,
     LONGITUDINAL_WARP_SCHEMA,
 )
@@ -555,15 +557,68 @@ class TestNormSsCoregistration(unittest.TestCase):
                     registration_mock.call_args.kwargs["type_of_transform"],
                     expected_transform,
                 )
-                # compose + t1c + segmentation
-                self.assertEqual(apply_transforms_mock.call_count, 3)
-                # Linear transforms are stored as a displacement field too, no .mat file.
-                self.assertTrue(
+                # t1c + segmentation, no compose call: the .mat is stored as is.
+                self.assertEqual(apply_transforms_mock.call_count, 2)
+                affine_file = LONGITUDINAL_AFFINE_SCHEMA.format(base_dir=self.outdir)
+                self.assertTrue(affine_file.exists())
+                self.assertEqual(affine_file.read_text(), "affine")
+                self.assertFalse(
                     LONGITUDINAL_DISP_SCHEMA.format(base_dir=self.outdir).exists()
                 )
-                self.assertEqual(
-                    list((self.outdir / "longitudinal").glob("*.mat")), []
+                for call in apply_transforms_mock.call_args_list:
+                    self.assertEqual(call.kwargs["transformlist"], [str(affine_file)])
+                self.assertEqual(longitudinal_transform_file(self.outdir), affine_file)
+
+    @patch("predict_gbm.preprocessing.norm_ss_coregistration.ants.image_write")
+    @patch("predict_gbm.preprocessing.norm_ss_coregistration.ants.apply_transforms")
+    @patch("predict_gbm.preprocessing.norm_ss_coregistration.ants.registration")
+    @patch("predict_gbm.preprocessing.norm_ss_coregistration.ants.image_read")
+    def test_register_recurrence_rerun_replaces_other_transform_format(
+        self,
+        image_read_mock,
+        registration_mock,
+        apply_transforms_mock,
+        image_write_mock,
+    ):
+        """An affine run after a syn run (and vice versa) leaves exactly one transform file."""
+        pre = self._save_mock_nifti("pre.nii.gz")
+        post = self._save_mock_nifti("post.nii.gz")
+        seg = self._save_mock_nifti("seg.nii.gz")
+        pre_img = MagicMock()
+        pre_img.clone.return_value = pre_img
+        apply_transforms_mock.side_effect = self._apply_transforms_side_effect
+        affine_file = LONGITUDINAL_AFFINE_SCHEMA.format(base_dir=self.outdir)
+        disp_file = LONGITUDINAL_DISP_SCHEMA.format(base_dir=self.outdir)
+
+        for algorithm, expected_file, other_file in (
+            ("syn", disp_file, affine_file),
+            ("affine", affine_file, disp_file),
+            ("syn", disp_file, affine_file),
+        ):
+            with self.subTest(algorithm=algorithm):
+                image_read_mock.side_effect = [pre_img, MagicMock(), MagicMock()]
+                mat_file = self.outdir / "0GenericAffine.mat"
+                mat_file.write_text("affine")
+                fwdtransforms = [str(mat_file)]
+                if algorithm == "syn":
+                    warp_file = self.outdir / "1Warp.nii.gz"
+                    warp_file.write_text("warp")
+                    fwdtransforms = [str(warp_file), str(mat_file)]
+                registration_mock.return_value = {"fwdtransforms": fwdtransforms}
+
+                register_recurrence(
+                    pre, post, seg, self.outdir, registration_algorithm=algorithm
                 )
+
+                self.assertTrue(expected_file.exists())
+                self.assertFalse(other_file.exists())
+                self.assertEqual(longitudinal_transform_file(self.outdir), expected_file)
+
+    def test_longitudinal_transform_file_defaults_to_displacement_field(self):
+        self.assertEqual(
+            longitudinal_transform_file(self.outdir),
+            LONGITUDINAL_DISP_SCHEMA.format(base_dir=self.outdir),
+        )
 
     def test_register_recurrence_invalid_algorithm_raises(self):
         pre = self._save_mock_nifti("pre.nii.gz")
