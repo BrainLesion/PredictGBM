@@ -620,6 +620,20 @@ class TestNormSsCoregistration(unittest.TestCase):
             LONGITUDINAL_DISP_SCHEMA.format(base_dir=self.outdir),
         )
 
+    def test_longitudinal_transform_file_prefers_field_and_warns_if_both_exist(self):
+        disp_file = LONGITUDINAL_DISP_SCHEMA.format(base_dir=self.outdir)
+        affine_file = LONGITUDINAL_AFFINE_SCHEMA.format(base_dir=self.outdir)
+        disp_file.parent.mkdir(parents=True, exist_ok=True)
+        affine_file.write_text("affine")
+        self.assertEqual(longitudinal_transform_file(self.outdir), affine_file)
+
+        disp_file.write_text("field")
+        with patch(
+            "predict_gbm.preprocessing.norm_ss_coregistration.logger"
+        ) as logger_mock:
+            self.assertEqual(longitudinal_transform_file(self.outdir), disp_file)
+        logger_mock.warning.assert_called_once()
+
     def test_register_recurrence_invalid_algorithm_raises(self):
         pre = self._save_mock_nifti("pre.nii.gz")
         post = self._save_mock_nifti("post.nii.gz")
