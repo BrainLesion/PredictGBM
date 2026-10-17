@@ -15,7 +15,6 @@ from brats.constants import AdultGliomaPreAndPostTreatmentAlgorithms
 from predict_gbm.utils.parsing import PatientDataset
 from predict_gbm.utils.constants import (
     LONGITUDINAL_DIR,
-    LONGITUDINAL_DISP_SCHEMA,
     LONGITUDINAL_WARP_SCHEMA,
     MODALITY_STRIPPED_SCHEMA,
     OUTPUT_BASE_SCHEMA,
@@ -27,6 +26,7 @@ from predict_gbm.utils.constants import (
     RECURRENCE_SCHEMA,
 )
 from predict_gbm.preprocessing import (
+    longitudinal_transform_file,
     norm_ss_coregister,
     run_brats,
     run_tissue_seg,
@@ -382,15 +382,15 @@ def warp_to_preop(
 ) -> None:
     """
     Warps an atlas-space image of the exam in exam_outdir to preop space with the exam's
-    longitudinal (followup-to-preop) transform from register_recurrence. Every registration
-    algorithm stores that transform as one ANTs displacement field (LONGITUDINAL_DISP_SCHEMA).
+    longitudinal (followup-to-preop) transform from register_recurrence, resolved with
+    longitudinal_transform_file (displacement field for dirac/syn, .mat for affine/rigid).
     Label maps are warped with nearest neighbour interpolation, images linearly.
     """
     t1c_pre_file = MODALITY_STRIPPED_SCHEMA.format(base_dir=preop_outdir, modality="t1c")
     warped = ants.apply_transforms(
         fixed=ants.image_read(str(t1c_pre_file)),
         moving=ants.image_read(str(image_file)),
-        transformlist=[str(LONGITUDINAL_DISP_SCHEMA.format(base_dir=exam_outdir))],
+        transformlist=[str(longitudinal_transform_file(exam_outdir))],
         interpolator="nearestNeighbor" if label_map else "linear",
         defaultvalue=0,
     )
