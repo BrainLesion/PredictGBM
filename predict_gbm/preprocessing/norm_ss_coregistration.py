@@ -54,7 +54,7 @@ ANTS_REGISTRATION_TRANSFORMS = {
 LINEAR_REGISTRATION_ALGORITHMS = ("affine", "rigid")
 SUPPORTED_REGISTRATION_ALGORITHMS = ("dirac",) + tuple(ANTS_REGISTRATION_TRANSFORMS)
 # ANTs transform fitted on t1c before DIRAC, without masks.
-DIRAC_AFFINE_TRANSFORM = "Affine"
+DIRAC_PRE_TRANSFORM_TYPE = "Affine"
 
 
 class LinearANTsRegistrator(ANTsRegistrator):
@@ -315,13 +315,22 @@ def norm_ss_coregister(
 def longitudinal_transform_file(outdir: Path) -> Path:
     """
     Path of the follow-up-to-preop transform stored by register_recurrence in outdir: the
-    affine .mat if present (affine/rigid), otherwise the displacement field (dirac/syn).
-    Either can be passed to ants.apply_transforms as is.
+    displacement field (dirac/syn) if present, otherwise the affine .mat (affine/rigid).
+    Either can be passed to ants.apply_transforms as is. register_recurrence never leaves
+    both behind; if both exist nonetheless, the displacement field is used with a warning.
     """
+    disp_file = LONGITUDINAL_DISP_SCHEMA.format(base_dir=outdir)
     affine_file = LONGITUDINAL_AFFINE_SCHEMA.format(base_dir=outdir)
+    if disp_file.exists():
+        if affine_file.exists():
+            logger.warning(
+                f"Both {disp_file.name} and {affine_file.name} found in {disp_file.parent}, "
+                "using the displacement field."
+            )
+        return disp_file
     if affine_file.exists():
         return affine_file
-    return LONGITUDINAL_DISP_SCHEMA.format(base_dir=outdir)
+    return disp_file
 
 
 def read_ants_affine_pre_to_post_mm(transform_file: Path) -> Tuple[np.ndarray, np.ndarray]:
@@ -555,12 +564,8 @@ def register_recurrence(
                 **reg_kwargs,
             )
             if algorithm in LINEAR_REGISTRATION_ALGORITHMS:
-                # A single .mat, kept as is (a few hundred bytes).
                 shutil.move(reg["fwdtransforms"][0], str(trafo_file))
             else:
-                # One dense field holding all forward transforms (affine + warp for syn).
-                # With compose set, apply_transforms writes the composed displacement field
-                # instead of a warped image and returns the path of that file.
                 composed_file = ants.apply_transforms(
                     fixed=t1c_pre_img,
                     moving=t1c_post_img,
@@ -570,12 +575,12 @@ def register_recurrence(
                 shutil.move(str(composed_file), str(trafo_file))
         else:
             logger.info(
-                f"Running ANTs {DIRAC_AFFINE_TRANSFORM} pre-registration on t1c for DIRAC."
+                f"Running ANTs {DIRAC_PRE_TRANSFORM_TYPE} pre-registration on t1c for DIRAC."
             )
             reg = ants.registration(
                 fixed=t1c_pre_img,
                 moving=t1c_post_img,
-                type_of_transform=DIRAC_AFFINE_TRANSFORM,
+                type_of_transform=DIRAC_PRE_TRANSFORM_TYPE,
                 outprefix=f"{tmpdir}/affine_",
             )
             affine_pre_to_post_mm, centre = read_ants_affine_pre_to_post_mm(
@@ -600,7 +605,7 @@ def register_recurrence(
             config_params["dirac_model"] = (
                 "t1ce" if dirac_single_modality else "four_modalities"
             )
-            config_params["dirac_affine_preregistration"] = DIRAC_AFFINE_TRANSFORM
+            config_params["dirac_affine_preregistration"] = DIRAC_PRE_TRANSFORM_TYPE
 
     # Warp t1c, the recurrence segmentation and the additional modalities with the stored transform.
     transformlist = [str(trafo_file)]

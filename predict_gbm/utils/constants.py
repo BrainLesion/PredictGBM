@@ -158,9 +158,6 @@ REGISTRATION_MASK_SCHEMA = (
 
 RECURRENCE_SCHEMA = OUTPUT_BASE_SCHEMA / LONGITUDINAL_DIR / "recurrence_preop.nii.gz"
 
-# Follow-up-to-preop transform of register_recurrence: a dense displacement field for the
-# deformable algorithms (dirac, syn), an ANTs affine .mat for the linear ones (affine, rigid).
-# Use longitudinal_transform_file() to resolve the stored one.
 LONGITUDINAL_DISP_SCHEMA = (
     OUTPUT_BASE_SCHEMA / LONGITUDINAL_DIR / "longitudinal_trafo.nii.gz"
 )
