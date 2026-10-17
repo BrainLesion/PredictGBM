@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 import unittest
 import warnings
 import nibabel as nib
+import numpy as np
 from pathlib import Path
 from tests.helpers import generate_mock_nifti
 from predict_gbm.preprocessing.norm_ss_coregistration import (
@@ -20,7 +21,6 @@ from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtract
 from predict_gbm.utils.constants import (
     ATLAS_STRIPPED_SCHEMA,
     ATLAS_UNSTRIPPED_SCHEMA,
-    LONGITUDINAL_AFFINE_SCHEMA,
     LONGITUDINAL_DISP_SCHEMA,
     LONGITUDINAL_WARP_SCHEMA,
 )
@@ -51,6 +51,16 @@ class TestNormSsCoregistration(unittest.TestCase):
             lower_limit=0,
             upper_limit=1,
         )
+
+    @staticmethod
+    def _apply_transforms_side_effect(*args, **kwargs):
+        """Mocked ants.apply_transforms: the compose call writes the combined field file and
+        returns its path, warping calls return an image mock."""
+        if kwargs.get("compose"):
+            composed = Path(kwargs["compose"] + "comptx.nii.gz")
+            composed.write_text("field")
+            return str(composed)
+        return MagicMock()
 
     def test_normalize(self):
         img_file = self._save_mock_nifti("img.nii.gz")
@@ -178,9 +188,7 @@ class TestNormSsCoregistration(unittest.TestCase):
         self.assertIsNone(by_name["adc"].normalized_bet_output_path)
 
     @patch("predict_gbm.preprocessing.norm_ss_coregistration.AtlasCentricPreprocessor")
-    def test_norm_ss_coregister_defaults_to_brats_mni152_atlas(
-        self, preprocessor_cls_mock
-    ):
+    def test_norm_ss_coregister_defaults_to_sri24_atlas(self, preprocessor_cls_mock):
         t1 = self._save_mock_nifti("t1.nii.gz")
         t1c = self._save_mock_nifti("t1c.nii.gz")
         t2 = self._save_mock_nifti("t2.nii.gz")
@@ -189,9 +197,7 @@ class TestNormSsCoregistration(unittest.TestCase):
         norm_ss_coregister(t1, t1c, t2, fl, self.outdir)
 
         atlas_image_path = preprocessor_cls_mock.call_args.kwargs["atlas_image_path"]
-        self.assertEqual(
-            atlas_image_path, ATLAS_UNSTRIPPED_SCHEMA.format(atlas="brats_mni152")
-        )
+        self.assertEqual(atlas_image_path, ATLAS_UNSTRIPPED_SCHEMA.format(atlas="sri24"))
 
     @patch("predict_gbm.preprocessing.norm_ss_coregistration.AtlasCentricPreprocessor")
     def test_norm_ss_coregister_can_switch_to_mni152_atlas(self, preprocessor_cls_mock):
@@ -206,16 +212,20 @@ class TestNormSsCoregistration(unittest.TestCase):
         self.assertEqual(atlas_image_path, ATLAS_UNSTRIPPED_SCHEMA.format(atlas="mni152"))
 
     @patch("predict_gbm.preprocessing.norm_ss_coregistration.AtlasCentricPreprocessor")
-    def test_norm_ss_coregister_can_switch_to_sri24_atlas(self, preprocessor_cls_mock):
+    def test_norm_ss_coregister_can_switch_to_brats_mni152_atlas(
+        self, preprocessor_cls_mock
+    ):
         t1 = self._save_mock_nifti("t1.nii.gz")
         t1c = self._save_mock_nifti("t1c.nii.gz")
         t2 = self._save_mock_nifti("t2.nii.gz")
         fl = self._save_mock_nifti("flair.nii.gz")
 
-        norm_ss_coregister(t1, t1c, t2, fl, self.outdir, atlas="sri24")
+        norm_ss_coregister(t1, t1c, t2, fl, self.outdir, atlas="brats_mni152")
 
         atlas_image_path = preprocessor_cls_mock.call_args.kwargs["atlas_image_path"]
-        self.assertEqual(atlas_image_path, ATLAS_UNSTRIPPED_SCHEMA.format(atlas="sri24"))
+        self.assertEqual(
+            atlas_image_path, ATLAS_UNSTRIPPED_SCHEMA.format(atlas="brats_mni152")
+        )
 
     @patch("predict_gbm.preprocessing.norm_ss_coregistration.AtlasCentricPreprocessor")
     def test_norm_ss_coregister_uses_stripped_atlas_when_skull_strip_false(
@@ -229,9 +239,7 @@ class TestNormSsCoregistration(unittest.TestCase):
         norm_ss_coregister(t1, t1c, t2, fl, self.outdir, skull_strip=False)
 
         atlas_image_path = preprocessor_cls_mock.call_args.kwargs["atlas_image_path"]
-        self.assertEqual(
-            atlas_image_path, ATLAS_STRIPPED_SCHEMA.format(atlas="brats_mni152")
-        )
+        self.assertEqual(atlas_image_path, ATLAS_STRIPPED_SCHEMA.format(atlas="sri24"))
 
     def test_norm_ss_coregister_rejects_unsupported_atlas(self):
         t1 = self._save_mock_nifti("t1.nii.gz")
@@ -290,50 +298,67 @@ class TestNormSsCoregistration(unittest.TestCase):
                 additional_quantitative_modalities={"swi": swi_quant},
             )
 
-    @patch("predict_gbm.preprocessing.norm_ss_coregistration.apply_longitudinal_warp")
-    @patch("predict_gbm.preprocessing.norm_ss_coregistration.optimize_warp_field")
-    @patch("predict_gbm.preprocessing.norm_ss_coregistration.resolve_dirac_disp_field")
-    @patch("predict_gbm.preprocessing.norm_ss_coregistration.run_dirac_inference")
-    def test_register_recurrence_runs_three_step_dirac_pipeline(
+    @patch("predict_gbm.preprocessing.norm_ss_coregistration.run_dirac_registration")
+    @patch(
+        "predict_gbm.preprocessing.norm_ss_coregistration.read_ants_affine_pre_to_post_mm"
+    )
+    @patch("predict_gbm.preprocessing.norm_ss_coregistration.ants.registration")
+    def test_register_recurrence_runs_dirac_pipeline(
         self,
+        registration_mock,
+        read_affine_mock,
         run_dirac_mock,
-        resolve_mock,
-        optimize_mock,
-        apply_mock,
     ):
         pre = self._save_mock_nifti("pre.nii.gz")
         post = self._save_mock_nifti("post.nii.gz")
         seg = self._save_mock_nifti("seg.nii.gz")
+        others = {
+            f"{modality}_{exam}_file": self._save_mock_nifti(f"{modality}_{exam}.nii.gz")
+            for modality in ("t1", "t2", "flair")
+            for exam in ("pre", "post")
+        }
+
+        registration_mock.return_value = {
+            "fwdtransforms": [str(self.outdir / "affine_0GenericAffine.mat")]
+        }
+        read_affine_mock.return_value = (np.eye(4), np.zeros(3))
+        # Zero displacement: the warped images must equal the follow-up images.
+        run_dirac_mock.return_value = np.zeros((16, 16, 16, 3), dtype=np.float32)
+
+        # The four-modality model needs t1, t2 and flair of both exams (C4).
+        with self.assertRaisesRegex(ValueError, "dirac_single_modality"):
+            register_recurrence(pre, post, seg, self.outdir)
+        registration_mock.assert_not_called()
+
+        register_recurrence(pre, post, seg, self.outdir, **others)
+
+        registration_mock.assert_called_once()
+        self.assertEqual(
+            registration_mock.call_args.kwargs["type_of_transform"], "Affine"
+        )
+        self.assertNotIn("mask", registration_mock.call_args.kwargs)
+        run_dirac_mock.assert_called_once()
+        dirac_kwargs = run_dirac_mock.call_args.kwargs
+        self.assertEqual(set(dirac_kwargs["pre_files"]), {"t1", "t1c", "flair", "t2"})
+        self.assertEqual(dirac_kwargs["pre_files"]["t1c"], pre)
+        self.assertEqual(dirac_kwargs["post_files"]["flair"], others["flair_post_file"])
+        self.assertFalse(dirac_kwargs["single_modality"])
 
         longitudinal_dir = self.outdir / "longitudinal"
-        longitudinal_dir.mkdir(parents=True, exist_ok=True)
-        initial_fwd = longitudinal_dir / "followup_to_preop_disp_voxel.nii.gz"
-        initial_bwd = longitudinal_dir / "preop_to_followup_disp_voxel.nii.gz"
-        initial_fwd.write_text("dummy")
-        initial_bwd.write_text("dummy")
-
-        optimized = longitudinal_dir / "followup_to_preop_disp_voxel_optimized.nii.gz"
-
-        resolve_mock.side_effect = [
-            initial_fwd,
-            initial_bwd,
-            longitudinal_dir / "dirac_infer_case_yx_seg.nii.gz",
-            longitudinal_dir / "dirac_infer_case_xy_seg.nii.gz",
-        ]
-
-        def _optimize_side_effect(*args, **kwargs):
-            optimized.write_text("optimized")
-
-        optimize_mock.side_effect = _optimize_side_effect
-
-        register_recurrence(pre, post, seg, self.outdir)
-
-        run_dirac_mock.assert_called_once()
-        optimize_mock.assert_called_once()
-        apply_mock.assert_called_once()
-        self.assertTrue(
-            (self.outdir / "longitudinal" / "longitudinal_trafo.nii.gz").exists()
+        self.assertEqual(
+            sorted(p.name for p in longitudinal_dir.iterdir()),
+            [
+                "longitudinal_trafo.nii.gz",
+                "recurrence_preop.nii.gz",
+                "t1c_warped_longitudinal.nii.gz",
+            ],
         )
+        trafo = nib.load(LONGITUDINAL_DISP_SCHEMA.format(base_dir=self.outdir))
+        self.assertEqual(trafo.shape[:3], (16, 16, 16))
+        warped = nib.load(
+            LONGITUDINAL_WARP_SCHEMA.format(base_dir=self.outdir, modality="t1c")
+        ).get_fdata()
+        np.testing.assert_allclose(warped, nib.load(post).get_fdata(), atol=1e-4)
 
     @patch("predict_gbm.preprocessing.norm_ss_coregistration.ants.image_write")
     @patch("predict_gbm.preprocessing.norm_ss_coregistration.ants.apply_transforms")
@@ -356,13 +381,14 @@ class TestNormSsCoregistration(unittest.TestCase):
         seg_img = MagicMock()
         image_read_mock.side_effect = [pre_img, post_img, seg_img]
 
-        trafo_file = self.outdir / "warp.nii.gz"
-        trafo_file.write_text("warp")
+        affine_file = self.outdir / "0GenericAffine.mat"
+        affine_file.write_text("affine")
+        warp_file = self.outdir / "1Warp.nii.gz"
+        warp_file.write_text("warp")
         registration_mock.return_value = {
-            "fwdtransforms": [str(trafo_file)],
-            "warpedmovout": MagicMock(),
+            "fwdtransforms": [str(warp_file), str(affine_file)]
         }
-        apply_transforms_mock.return_value = MagicMock()
+        apply_transforms_mock.side_effect = self._apply_transforms_side_effect
 
         register_recurrence(
             pre,
@@ -373,60 +399,60 @@ class TestNormSsCoregistration(unittest.TestCase):
         )
 
         registration_mock.assert_called_once()
-        apply_transforms_mock.assert_called_once()
-        self.assertTrue(
-            (self.outdir / "longitudinal" / "longitudinal_trafo.nii.gz").exists()
-        )
+        # One call composes affine + warp into the stored field, two warp t1c and the
+        # segmentation with that field.
+        self.assertEqual(apply_transforms_mock.call_count, 3)
+        compose_kwargs = apply_transforms_mock.call_args_list[0].kwargs
+        self.assertEqual(compose_kwargs["transformlist"], [str(warp_file), str(affine_file)])
+        disp_file = LONGITUDINAL_DISP_SCHEMA.format(base_dir=self.outdir)
+        self.assertTrue(disp_file.exists())
+        for call in apply_transforms_mock.call_args_list[1:]:
+            self.assertEqual(call.kwargs["transformlist"], [str(disp_file)])
 
-    @patch("predict_gbm.preprocessing.norm_ss_coregistration.warp_image_to_preop")
-    @patch("predict_gbm.preprocessing.norm_ss_coregistration.apply_longitudinal_warp")
-    @patch("predict_gbm.preprocessing.norm_ss_coregistration.optimize_warp_field")
-    @patch("predict_gbm.preprocessing.norm_ss_coregistration.resolve_dirac_disp_field")
-    @patch("predict_gbm.preprocessing.norm_ss_coregistration.run_dirac_inference")
+    @patch("predict_gbm.preprocessing.norm_ss_coregistration.run_dirac_registration")
+    @patch(
+        "predict_gbm.preprocessing.norm_ss_coregistration.read_ants_affine_pre_to_post_mm"
+    )
+    @patch("predict_gbm.preprocessing.norm_ss_coregistration.ants.registration")
     def test_register_recurrence_dirac_warps_additional_modalities(
         self,
+        registration_mock,
+        read_affine_mock,
         run_dirac_mock,
-        resolve_mock,
-        optimize_mock,
-        apply_mock,
-        warp_image_mock,
     ):
         pre = self._save_mock_nifti("pre.nii.gz")
         post = self._save_mock_nifti("post.nii.gz")
         seg = self._save_mock_nifti("seg.nii.gz")
         swi_post = self._save_mock_nifti("swi_post.nii.gz")
 
-        longitudinal_dir = self.outdir / "longitudinal"
-        longitudinal_dir.mkdir(parents=True, exist_ok=True)
-        initial_fwd = longitudinal_dir / "followup_to_preop_disp_voxel.nii.gz"
-        initial_bwd = longitudinal_dir / "preop_to_followup_disp_voxel.nii.gz"
-        initial_fwd.write_text("dummy")
-        initial_bwd.write_text("dummy")
+        registration_mock.return_value = {
+            "fwdtransforms": [str(self.outdir / "affine_0GenericAffine.mat")]
+        }
+        read_affine_mock.return_value = (np.eye(4), np.zeros(3))
+        run_dirac_mock.return_value = np.zeros((16, 16, 16, 3), dtype=np.float32)
 
-        optimized = longitudinal_dir / "followup_to_preop_disp_voxel_optimized.nii.gz"
-
-        resolve_mock.side_effect = [
-            initial_fwd,
-            initial_bwd,
-            longitudinal_dir / "dirac_infer_case_yx_seg.nii.gz",
-            longitudinal_dir / "dirac_infer_case_xy_seg.nii.gz",
-        ]
-
-        def _optimize_side_effect(*args, **kwargs):
-            optimized.write_text("optimized")
-
-        optimize_mock.side_effect = _optimize_side_effect
-
+        # The t1c-only model needs no further modalities.
         register_recurrence(
-            pre, post, seg, self.outdir, additional_modalities={"swi": swi_post}
+            pre,
+            post,
+            seg,
+            self.outdir,
+            additional_modalities={"swi": swi_post},
+            dirac_single_modality=True,
         )
 
-        warp_image_mock.assert_called_once()
-        call_kwargs = warp_image_mock.call_args.kwargs
-        self.assertEqual(call_kwargs["image_file"], swi_post)
-        self.assertEqual(
-            call_kwargs["out_file"],
-            LONGITUDINAL_WARP_SCHEMA.format(base_dir=self.outdir, modality="swi"),
+        dirac_kwargs = run_dirac_mock.call_args.kwargs
+        self.assertTrue(dirac_kwargs["single_modality"])
+        self.assertEqual(dirac_kwargs["pre_files"]["t1c"], pre)
+        self.assertEqual(dirac_kwargs["post_files"]["t1c"], post)
+        swi_warped_file = LONGITUDINAL_WARP_SCHEMA.format(
+            base_dir=self.outdir, modality="swi"
+        )
+        self.assertTrue(swi_warped_file.exists())
+        np.testing.assert_allclose(
+            nib.load(swi_warped_file).get_fdata(),
+            nib.load(swi_post).get_fdata(),
+            atol=1e-4,
         )
 
     @patch("predict_gbm.preprocessing.norm_ss_coregistration.ants.image_write")
@@ -454,11 +480,8 @@ class TestNormSsCoregistration(unittest.TestCase):
 
         trafo_file = self.outdir / "warp.nii.gz"
         trafo_file.write_text("warp")
-        registration_mock.return_value = {
-            "fwdtransforms": [str(trafo_file)],
-            "warpedmovout": MagicMock(),
-        }
-        apply_transforms_mock.return_value = MagicMock()
+        registration_mock.return_value = {"fwdtransforms": [str(trafo_file)]}
+        apply_transforms_mock.side_effect = self._apply_transforms_side_effect
 
         register_recurrence(
             pre,
@@ -469,7 +492,8 @@ class TestNormSsCoregistration(unittest.TestCase):
             additional_modalities={"swi": swi_post},
         )
 
-        self.assertEqual(apply_transforms_mock.call_count, 2)
+        # compose + t1c + segmentation + swi
+        self.assertEqual(apply_transforms_mock.call_count, 4)
         written_paths = [str(c.args[1]) for c in image_write_mock.call_args_list]
         expected = str(
             LONGITUDINAL_WARP_SCHEMA.format(base_dir=self.outdir, modality="swi")
@@ -516,11 +540,8 @@ class TestNormSsCoregistration(unittest.TestCase):
 
                 trafo_file = self.outdir / "0GenericAffine.mat"
                 trafo_file.write_text("affine")
-                registration_mock.return_value = {
-                    "fwdtransforms": [str(trafo_file)],
-                    "warpedmovout": MagicMock(),
-                }
-                apply_transforms_mock.return_value = MagicMock()
+                registration_mock.return_value = {"fwdtransforms": [str(trafo_file)]}
+                apply_transforms_mock.side_effect = self._apply_transforms_side_effect
 
                 register_recurrence(
                     pre,
@@ -534,13 +555,14 @@ class TestNormSsCoregistration(unittest.TestCase):
                     registration_mock.call_args.kwargs["type_of_transform"],
                     expected_transform,
                 )
-                apply_transforms_mock.assert_called_once()
-                # Linear transforms are stored as .mat, not as a displacement field.
+                # compose + t1c + segmentation
+                self.assertEqual(apply_transforms_mock.call_count, 3)
+                # Linear transforms are stored as a displacement field too, no .mat file.
                 self.assertTrue(
-                    LONGITUDINAL_AFFINE_SCHEMA.format(base_dir=self.outdir).exists()
-                )
-                self.assertFalse(
                     LONGITUDINAL_DISP_SCHEMA.format(base_dir=self.outdir).exists()
+                )
+                self.assertEqual(
+                    list((self.outdir / "longitudinal").glob("*.mat")), []
                 )
 
     def test_register_recurrence_invalid_algorithm_raises(self):

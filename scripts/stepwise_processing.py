@@ -117,12 +117,19 @@ if __name__ == "__main__":
         outdir=outdir_followup,
     )
 
-    # Longitudinal registration
+    # Longitudinal registration (t1, t2, flair of both exams feed the four-modality DIRAC
+    # model; pass dirac_single_modality=True to run the t1c-only model without them)
     register_recurrence(
         t1c_pre_file=outdir_preop / "skull_stripped/t1c_skullstripped.nii.gz",
         t1c_post_file=skull_strip_followup_outdir / "t1c_skullstripped.nii.gz",
         recurrence_seg_file=tumorseg_file,
         outdir=outdir_followup,
+        t1_pre_file=outdir_preop / "skull_stripped/t1_skullstripped.nii.gz",
+        t2_pre_file=outdir_preop / "skull_stripped/t2_skullstripped.nii.gz",
+        flair_pre_file=outdir_preop / "skull_stripped/flair_skullstripped.nii.gz",
+        t1_post_file=skull_strip_followup_outdir / "t1_skullstripped.nii.gz",
+        t2_post_file=skull_strip_followup_outdir / "t2_skullstripped.nii.gz",
+        flair_post_file=skull_strip_followup_outdir / "flair_skullstripped.nii.gz",
         # Optional: name -> followup-space nifti path, warped into preop space
         additional_modalities=None,
     )

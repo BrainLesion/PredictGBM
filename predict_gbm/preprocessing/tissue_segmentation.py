@@ -144,7 +144,7 @@ def run_tissue_seg(
     outdir: Path,
     registration_mask_file: Path = None,
     algorithm: Literal["atlas_registration", "antsAtroposN4"] = "atlas_registration",
-    atlas: str = "brats_mni152",
+    atlas: str = "sri24",
 ) -> None:
     """
     Performs tissue segmentation for gm, wm, csf using the given algorithm.
@@ -156,8 +156,8 @@ def run_tissue_seg(
             Only used when algorithm is "atlas_registration".
         algorithm (str): Tissue segmentation algorithm to use. Supports "atlas_registration", "antsAtroposN4"
         atlas (str): Atlas whose skull-stripped T1 template and tissue probability maps are used.
-            One of "brats_mni152" (default), "mni152", or "sri24". Only used when algorithm is
-            "atlas_registration".
+            One of "sri24" (default), "brats_mni152", or "mni152". Must match the atlas used in
+            norm_ss_coregister. Only used when algorithm is "atlas_registration".
 
     Returns:
         None
@@ -196,7 +196,7 @@ def run_tissue_seg_atlas_registration(
     t1_file: Path,
     outdir: Path,
     registration_mask_file: Path = None,
-    atlas: str = "brats_mni152",
+    atlas: str = "sri24",
 ) -> None:
     """
     Performs tissue segmentation for gm, wm, csf by registering an atlas to the input t1 file and transforming atlas tissue
@@ -207,7 +207,8 @@ def run_tissue_seg_atlas_registration(
         outdir (Path): Path to output directory. Usually exam directory.
         registration_mask_file (Path): Path to a mask for registration metric. Voxel with value 0 are ignored.
         atlas (str): Atlas whose skull-stripped T1 template and tissue probability maps are used.
-            One of "brats_mni152" (default), "mni152", or "sri24".
+            One of "sri24" (default), "brats_mni152", or "mni152". Must match the atlas used in
+            norm_ss_coregister.
 
     Returns:
         None
