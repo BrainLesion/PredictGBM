@@ -585,8 +585,8 @@ if __name__ == "__main__":
         help="Only recompute the longitudinal (postop/followup t1c to preop) registration of "
         "every processed postop/followup exam, overwriting existing results, and apply the new "
         "transform to the modalities this script warps to preop space (t1c, flair, tissue "
-        "probability maps, tumor segmentation and dose map). Existing outputs of the other "
-        "steps are reused.",
+        "probability maps, tumor segmentation, BraTS24 postop segmentation if present, and "
+        "dose map). Existing outputs of the other steps are reused.",
     )
     parser.add_argument(
         "-brats24_postop",
@@ -744,6 +744,29 @@ if __name__ == "__main__":
                 logger.exception(
                     f"{patient_id}/{dir_name}: recurrence registration failed, skipping."
                 )
+                continue
+
+            # The BraTS24 postop segmentation (optional -brats24_postop step) is warped with the
+            # same transform, so an existing one is re-warped after a recomputed registration.
+            brats24_seg_file = BRATS24_TUMORSEG_SCHEMA.format(base_dir=exam_outdir)
+            if args.longitudinal_registration and brats24_seg_file.exists():
+                brats24_recurrence_file = BRATS24_RECURRENCE_SCHEMA.format(base_dir=exam_outdir)
+                try:
+                    warp_to_preop(
+                        image_file=brats24_seg_file,
+                        exam_outdir=exam_outdir,
+                        preop_outdir=preop_outdir,
+                        out_file=brats24_recurrence_file,
+                        label_map=True,
+                    )
+                    logger.info(
+                        f"{patient_id}/{dir_name}: re-warped BraTS24 postop segmentation to "
+                        f"{brats24_recurrence_file}."
+                    )
+                except Exception:
+                    logger.exception(
+                        f"{patient_id}/{dir_name}: re-warping BraTS24 postop segmentation failed."
+                    )
 
         # Dose map: derivatives MNI frame -> atlas space of the dose exam -> preop space
         dose_file = DOSE_MAP_SCHEMA.format(
