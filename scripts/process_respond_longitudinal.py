@@ -12,7 +12,7 @@ import numpy as np
 import nibabel as nib
 import openpyxl
 from loguru import logger
-from scipy.ndimage import distance_transform_edt
+from scipy.ndimage import binary_opening, distance_transform_edt
 from dipy.core.gradients import gradient_table
 from dipy.io.gradients import read_bvals_bvecs
 from dipy.reconst.dti import TensorModel
@@ -36,10 +36,12 @@ from predict_gbm.utils.constants import (
     MODALITY_STRIPPED_SCHEMA,
     OUTPUT_BASE_SCHEMA,
     PathSchema,
+    RECURRENCE_CORRECTED_SCHEMA,
     RECURRENCE_SCHEMA,
     REGISTRATION_MASK_SCHEMA,
     SKULL_STRIP_ALGORITHM_SYNTHSTRIP,
     TISSUE_PBMAP_SCHEMA,
+    TUMORSEG_CORRECTED_SCHEMA,
     TUMORSEG_SCHEMA,
 )
 from predict_gbm.preprocessing import (
@@ -62,9 +64,12 @@ from predict_gbm.utils.utils import update_config
 #    and percentile normalization; the t1c brain mask is applied to t1/t2/flair,
 # 4. tumor segmentation with BraTS25_1 (preop branch for preop-labelled exams, post branch
 #    otherwise),
-# 5. atlas-based tissue segmentation with the tumor core masked.
+# 5. corrected tumor segmentation: morphological opening of the enhancing tumor, removed
+#    voxels become edema (tumor_seg_corrected.nii.gz next to tumor_seg.nii.gz),
+# 6. atlas-based tissue segmentation with the tumor core masked (original segmentation).
 # Every exam except the reference preop exam (the first preop session, everything is
-# co-registered to it) is then registered to it with four-modality DIRAC.
+# co-registered to it) is then registered to it with four-modality DIRAC, which also warps
+# both segmentations (longitudinal/recurrence_preop{,_corrected}.nii.gz).
 # Exams with a DTI series additionally get a mean diffusivity map (dipy tensor fit). It is
 # kept out of brainles (its center-of-mass initialization and atlas correction misplace the
 # skull-free MD by up to ~100 mm): MD is rigidly registered to the original-space t1c from
@@ -72,6 +77,12 @@ from predict_gbm.utils.utils import update_config
 # step 2. Before masking (step 3, never normalized: quantitative, mm^2/s) its EPI
 # susceptibility distortion is corrected with an A-P-only deformable registration of the b0
 # to the t2. It is co-transformed by DIRAC.
+# -compute_trace (separate step, not part of the regular run): the trace-weighted image of
+# every processed exam with a DTI, the geometric mean of the diffusion-weighted volumes,
+# brought to the same spaces as MD with the transforms stored for MD (process_trace).
+# -register_adc (separate step as well): the scanner's ADC map of every processed exam
+# without a DTI, rigidly registered to the t1c like MD and brought to the same spaces
+# (process_adc), so that exams without a trace have a diffusion image there too.
 ATLAS = "sri24"
 SPACE = "org"
 # Patient directories under the data dir (default glob, e.g. sub-GR008; -patient_glob 'tum_*'
@@ -132,6 +143,31 @@ DISTORTION_SHRINK_FACTORS = "4x2x1"
 DISTORTION_SMOOTHING_SIGMAS = "2x1x0vox"
 DISTORTION_WARP_SCHEMA = OUTPUT_BASE_SCHEMA / DTI_FOLDER / "distortion_warp.nii.gz"
 CONFIG_STEP_CORRECT_MD_DISTORTION = "correct_md_distortion"
+# Trace (-compute_trace only): the geometric mean of the diffusion-weighted volumes (b >=
+# DTI_B0_THRESHOLD) of the DTI series, i.e. the isotropic / trace-weighted DWI, on the DTI
+# grid (<outdir>/dti/trace.nii.gz, raw signal, unmasked). It takes the MD path with the
+# transforms stored for MD: MD -> t1c rigid plus the t1c atlas transform
+# (atlas_registered/trace.nii.gz), the rigid transform to the preop exam
+# (preop_coregistered/trace.nii.gz), the DTI distortion field if one was estimated for
+# the MD, then the t1c brain mask with percentile normalization like the structural
+# modalities (skull_stripped/trace_skullstripped.nii.gz) and the stored longitudinal
+# transform (longitudinal/trace_warped_longitudinal.nii.gz).
+TRACE_MODALITY = "trace"
+TRACE_NATIVE_SCHEMA = OUTPUT_BASE_SCHEMA / DTI_FOLDER / "trace.nii.gz"
+CONFIG_STEP_COMPUTE_TRACE = "compute_trace"
+# ADC (-register_adc only): the scanner's ADC map (<session>/..._space-org_adc.nii.gz, from
+# a clinical DWI on its own grid, no sidecar) of every processed exam without a DTI. It is
+# rigidly registered to the original-space t1c with the MD settings (for the registration
+# only, values above its ADC_CLIP_PERCENTILE are clipped: stray extreme voxels collapse
+# the Mattes histogram) and takes the MD path: the t1c atlas transform
+# (atlas_registered/adc.nii.gz), the rigid transform to the preop exam
+# (preop_coregistered/adc.nii.gz), the t1c brain mask with percentile normalization
+# (skull_stripped/adc_skullstripped.nii.gz) and the stored longitudinal transform
+# (longitudinal/adc_warped_longitudinal.nii.gz). No distortion correction (no b0).
+ADC_SUFFIX = "adc"
+ADC_MODALITY = "adc"
+ADC_CLIP_PERCENTILE = 99.9
+CONFIG_STEP_REGISTER_ADC = "register_adc"
 
 # Intermediate outputs: atlas-registered images with skull (brainles transforms and log
 # next to them), and for postop/followup exams the same images rigidly co-registered to
@@ -149,6 +185,7 @@ ATLAS_REGISTRATION_LOGFILE_SCHEMA = (
 # brainles' t1c -> atlas transform (its file naming) and the separate MD -> t1c transform.
 ATLAS_T1C_TRAFO_SCHEMA = ATLAS_REGISTRATION_TRAFO_SCHEMA / "t1c" / "2_M_atlas__t1c.mat"
 MD_TO_T1C_TRAFO_SCHEMA = ATLAS_REGISTRATION_TRAFO_SCHEMA / MD_MODALITY / "md_to_t1c.mat"
+ADC_TO_T1C_TRAFO_SCHEMA = ATLAS_REGISTRATION_TRAFO_SCHEMA / ADC_MODALITY / "adc_to_t1c.mat"
 PREOP_COREGISTERED_FOLDER = "preop_coregistered"
 PREOP_COREGISTERED_SCHEMA = (
     OUTPUT_BASE_SCHEMA / PREOP_COREGISTERED_FOLDER / "{modality}.nii.gz"
@@ -188,6 +225,13 @@ DATES_RESECTION_COLUMN = "Resection"
 DATES_POSTOP_COLUMN = "postop"
 LABEL_SOURCE_SHEET = "sheet"
 LABEL_SOURCE_RULE = "rule"
+
+# Corrected tumor segmentation: binary opening (erosion followed by dilation, scipy's default
+# 6-connected 3D structuring element) of the enhancing tumor; removed voxels become edema.
+ENHANCING_LABEL = 3
+EDEMA_LABEL = 2
+ENHANCING_OPENING_ITERATIONS = 2
+CONFIG_STEP_CORRECT_TUMOR_SEG = "correct_tumor_seg"
 
 # Tissue probability maps co-transformed to preop space alongside t1c and flair.
 LONGITUDINAL_TISSUES = ("gm", "wm", "csf")
@@ -297,6 +341,14 @@ def resolve_dti(
     return dti_file, bval_file, bvec_file
 
 
+def resolve_adc(patient_dir: Path, subject: str, session: str) -> Optional[Path]:
+    """The original-space ADC map of a session, or None if there is none."""
+    adc_file = ORG_FILE_SCHEMA.format(
+        patient_dir=patient_dir, subject=subject, session=session, suffix=ADC_SUFFIX
+    )
+    return adc_file if adc_file.exists() else None
+
+
 def compute_md(
     dti_file: Path, bval_file: Path, bvec_file: Path, outfile: Path, b0_outfile: Path
 ) -> None:
@@ -334,6 +386,33 @@ def compute_md(
     logger.info(
         f"{outfile}: mean diffusivity fitted from {dti_file.name} ({DTI_FIT_METHOD}), "
         f"{n_clipped} voxels clipped to {MD_MAX}."
+    )
+
+
+def compute_trace(dti_file: Path, bval_file: Path, bvec_file: Path, outfile: Path) -> None:
+    """
+    Writes the trace-weighted image of the DTI series on its grid to outfile: the geometric
+    mean of the diffusion-weighted volumes (b >= DTI_B0_THRESHOLD), raw signal, unmasked,
+    0 where any of the volumes is <= 0.
+    """
+    dti_img = nib.load(str(dti_file))
+    bvals, _ = read_bvals_bvecs(str(bval_file), str(bvec_file))
+    dwi_idx = np.where(bvals >= DTI_B0_THRESHOLD)[0]
+    dwi = dti_img.get_fdata(dtype=np.float32)[..., dwi_idx]
+    valid = np.all(dwi > 0, axis=-1)
+    trace = np.zeros(dwi.shape[:-1], dtype=np.float32)
+    trace[valid] = np.exp(np.log(dwi[valid]).mean(axis=-1))
+
+    outfile.parent.mkdir(parents=True, exist_ok=True)
+    img = nib.Nifti1Image(trace, dti_img.affine)
+    img.set_qform(dti_img.affine, code=int(dti_img.header["qform_code"]))
+    img.set_sform(dti_img.affine, code=int(dti_img.header["sform_code"]))
+    img.header.set_xyzt_units(xyz="mm")
+    nib.save(img, str(outfile))
+    logger.info(
+        f"{outfile}: trace computed as the geometric mean of {len(dwi_idx)} diffusion-weighted "
+        f"volumes (b = {sorted(set(np.round(bvals[dwi_idx]).astype(int).tolist()))}) of "
+        f"{dti_file.name}."
     )
 
 
@@ -682,6 +761,40 @@ def apply_brain_mask(modality: str, modality_file: Path, outdir: Path) -> None:
         m.save_current_image(stripped_file, normalization=not quantitative)
 
 
+def correct_tumor_seg(outdir: Path, override: bool = False) -> None:
+    """
+    Writes the corrected tumor segmentation of an exam: its enhancing tumor is opened
+    (binary_opening, ENHANCING_OPENING_ITERATIONS) and the removed voxels become edema; all
+    other labels are kept. Existing outputs are kept unless override is True.
+    """
+    corrected_file = TUMORSEG_CORRECTED_SCHEMA.format(base_dir=outdir)
+    if corrected_file.exists() and not override:
+        logger.info(f"{outdir}: corrected tumor segmentation already done, skipping.")
+        return
+    seg_nifti = nib.load(str(TUMORSEG_SCHEMA.format(base_dir=outdir)))
+    seg = np.rint(seg_nifti.get_fdata()).astype(np.int32)
+    enhancing = seg == ENHANCING_LABEL
+    removed = enhancing & ~binary_opening(enhancing, iterations=ENHANCING_OPENING_ITERATIONS)
+    seg[removed] = EDEMA_LABEL
+    nib.save(
+        nib.Nifti1Image(seg.astype(seg_nifti.get_data_dtype()), seg_nifti.affine, seg_nifti.header),
+        str(corrected_file),
+    )
+    update_config(
+        outdir,
+        CONFIG_STEP_CORRECT_TUMOR_SEG,
+        {
+            "opened_label": ENHANCING_LABEL,
+            "replacement_label": EDEMA_LABEL,
+            "opening_iterations": ENHANCING_OPENING_ITERATIONS,
+        },
+    )
+    logger.info(
+        f"{outdir}: corrected tumor segmentation written, {int(removed.sum())} of "
+        f"{int(enhancing.sum())} enhancing voxels relabelled as edema."
+    )
+
+
 def process_exam(
     modalities: Dict[str, Path],
     dti_files: Optional[Tuple[Path, Path, Path]],
@@ -695,8 +808,9 @@ def process_exam(
     Per-exam steps: atlas registration (skull on, unnormalized), rigid co-registration to
     the reference preop exam (all other exams, i.e. preop_outdir given), skull stripping
     and normalization, BraTS25_1 tumor segmentation (t1/t1c/t2/flair; preop branch if
-    preop_timepoint, post branch otherwise), the atlas-based tissue segmentation with the
-    tumor core masked and, if dti_files are given, the mean diffusivity (process_md). If
+    preop_timepoint, post branch otherwise), its corrected version (correct_tumor_seg), the
+    atlas-based tissue segmentation with the tumor core masked and, if dti_files are given,
+    the mean diffusivity (process_md). If
     override is True, all steps are rerun even if their outputs already exist.
     """
     outdir.mkdir(parents=True, exist_ok=True)
@@ -754,6 +868,8 @@ def process_exam(
             cuda_device=cuda_device,
             is_preop=preop_timepoint,
         )
+
+    correct_tumor_seg(outdir, override=override)
 
     tissueseg_files = [
         TISSUE_PBMAP_SCHEMA.format(base_dir=outdir, tissue=tissue)
@@ -884,20 +1000,252 @@ def process_md(
     elif not correct_distortion:
         apply_brain_mask(MD_MODALITY, md_coregistered_file, outdir)
     else:
-        with tempfile.TemporaryDirectory(prefix="md_distortion_corrected_") as tmpdir:
-            md_corrected_file = Path(tmpdir) / f"{MD_MODALITY}.nii.gz"
-            md_img = ants.image_read(str(md_coregistered_file))
-            ants.image_write(
-                ants.apply_transforms(
-                    fixed=md_img,
-                    moving=md_img,
-                    transformlist=[str(warp_file)],
-                    interpolator="linear",
-                    defaultvalue=0,
-                ),
-                str(md_corrected_file),
-            )
-            apply_brain_mask(MD_MODALITY, md_corrected_file, outdir)
+        apply_distortion_and_brain_mask(MD_MODALITY, md_coregistered_file, warp_file, outdir)
+
+
+def apply_distortion_and_brain_mask(
+    modality: str, coregistered_file: Path, warp_file: Path, outdir: Path
+) -> None:
+    """
+    Applies the DTI distortion field (correct_md_distortion) to a co-registered DTI-derived
+    image and then the t1c brain mask (apply_brain_mask, normalized unless the modality is
+    quantitative) into <outdir>/skull_stripped/<modality>_skullstripped.nii.gz.
+    """
+    with tempfile.TemporaryDirectory(prefix=f"{modality}_distortion_corrected_") as tmpdir:
+        corrected_file = Path(tmpdir) / f"{modality}.nii.gz"
+        img = ants.image_read(str(coregistered_file))
+        ants.image_write(
+            ants.apply_transforms(
+                fixed=img,
+                moving=img,
+                transformlist=[str(warp_file)],
+                interpolator="linear",
+                defaultvalue=0,
+            ),
+            str(corrected_file),
+        )
+        apply_brain_mask(modality, corrected_file, outdir)
+
+
+def process_trace(
+    dti_files: Tuple[Path, Path, Path],
+    outdir: Path,
+    preop_outdir: Optional[Path],
+    override: bool = False,
+) -> None:
+    """
+    Trace-weighted image of a processed exam with a DTI whose MD outputs exist
+    (-compute_trace): compute_trace on the DTI grid, resampling to atlas space with the
+    stored MD -> t1c and t1c atlas transforms, to preop space with the exam's rigid
+    transform (postop/followup), the DTI distortion field if it was estimated for the MD
+    (otherwise a warning), the t1c brain mask with percentile normalization and, if the
+    exam's longitudinal transform exists, the warp to the preop space of the longitudinal
+    registration. Each output is skipped on its own if it exists (unless override).
+    """
+    md_trafo_file = MD_TO_T1C_TRAFO_SCHEMA.format(base_dir=outdir)
+    atlas_trafo_file = ATLAS_T1C_TRAFO_SCHEMA.format(base_dir=outdir)
+    missing = [f for f in (md_trafo_file, atlas_trafo_file) if not f.exists()]
+    if missing:
+        raise FileNotFoundError(f"MD transforms missing (run the MD step first): {missing}")
+
+    trace_native_file = TRACE_NATIVE_SCHEMA.format(base_dir=outdir)
+    if trace_native_file.exists() and not override:
+        logger.info(f"{outdir}: trace already computed, skipping.")
+    else:
+        compute_trace(*dti_files, outfile=trace_native_file)
+
+    atlas_file = ATLAS_REGISTERED_SCHEMA.format(base_dir=outdir, modality=TRACE_MODALITY)
+    if atlas_file.exists() and not override:
+        logger.info(f"{outdir}: trace atlas registration already done, skipping.")
+    else:
+        warped = ants.apply_transforms(
+            fixed=ants.image_read(
+                str(ATLAS_REGISTERED_SCHEMA.format(base_dir=outdir, modality="t1c"))
+            ),
+            moving=ants.image_read(str(trace_native_file)),
+            transformlist=[str(atlas_trafo_file), str(md_trafo_file)],
+            interpolator="linear",
+            defaultvalue=0,
+        )
+        ants.image_write(warped, str(atlas_file))
+        logger.info(f"{outdir}: trace moved to atlas space with the MD transforms.")
+
+    if preop_outdir is None:
+        coregistered_schema = ATLAS_REGISTERED_SCHEMA
+    else:
+        coregistered_schema = PREOP_COREGISTERED_SCHEMA
+        coregistered_file = PREOP_COREGISTERED_SCHEMA.format(base_dir=outdir, modality=TRACE_MODALITY)
+        if coregistered_file.exists() and not override:
+            logger.info(f"{outdir}: trace preop co-registration done, skipping.")
+        else:
+            resample_to_preop(outdir, preop_outdir, TRACE_MODALITY)
+    trace_coregistered_file = coregistered_schema.format(base_dir=outdir, modality=TRACE_MODALITY)
+
+    warp_file = DISTORTION_WARP_SCHEMA.format(base_dir=outdir)
+    correct_distortion = warp_file.exists()
+    stripped_file = MODALITY_STRIPPED_SCHEMA.format(base_dir=outdir, modality=TRACE_MODALITY)
+    if stripped_file.exists() and not override:
+        logger.info(f"{outdir}: trace skull stripping already done, skipping.")
+    elif not correct_distortion:
+        logger.warning(
+            f"{outdir}: no DTI distortion field (none estimated for the MD), trace is not "
+            "corrected for EPI distortion."
+        )
+        apply_brain_mask(TRACE_MODALITY, trace_coregistered_file, outdir)
+    else:
+        apply_distortion_and_brain_mask(TRACE_MODALITY, trace_coregistered_file, warp_file, outdir)
+
+    longitudinal_trafo_file = None
+    if preop_outdir is not None:
+        longitudinal_trafo_file = longitudinal_transform_file(outdir)
+        warped_file = LONGITUDINAL_WARP_SCHEMA.format(base_dir=outdir, modality=TRACE_MODALITY)
+        if not longitudinal_trafo_file.exists():
+            logger.warning(f"{outdir}: no longitudinal transform, trace not warped to preop space.")
+            longitudinal_trafo_file = None
+        elif warped_file.exists() and not override:
+            logger.info(f"{outdir}: trace longitudinal warp already done, skipping.")
+        else:
+            warp_longitudinal(preop_outdir, outdir, TRACE_MODALITY)
+
+    update_config(
+        outdir,
+        CONFIG_STEP_COMPUTE_TRACE,
+        {
+            "dti_file": str(dti_files[0]),
+            "trace": "geometric mean of the diffusion-weighted volumes",
+            "b0_threshold": DTI_B0_THRESHOLD,
+            "md_to_t1c_transform_file": str(md_trafo_file),
+            "atlas_transform_file": str(atlas_trafo_file),
+            "preop_rigid_transform_file": (
+                None if preop_outdir is None else str(PREOP_RIGID_TRAFO_SCHEMA.format(base_dir=outdir))
+            ),
+            "distortion_warp_file": str(warp_file) if correct_distortion else None,
+            "normalization": "percentile",
+            "longitudinal_transform_file": (
+                None if longitudinal_trafo_file is None else str(longitudinal_trafo_file)
+            ),
+        },
+    )
+
+
+def register_adc_to_atlas(adc_file: Path, t1c_file: Path, outdir: Path) -> None:
+    """
+    Rigidly registers the ADC map (clipped to its ADC_CLIP_PERCENTILE for the registration)
+    to the original-space t1c with skull with the MD settings
+    (MD_REGISTRATION_TRANSFORM/_METRIC/_INIT), stores the transform as
+    <outdir>/atlas_registered/transformations/adc/adc_to_t1c.mat and resamples the raw ADC
+    with it followed by the brainles t1c atlas transform to
+    <outdir>/atlas_registered/adc.nii.gz.
+    """
+    adc_img = ants.image_read(str(adc_file))
+    values = adc_img.numpy()
+    positive = values[values > 0]
+    clip = float(np.percentile(positive, ADC_CLIP_PERCENTILE)) if positive.size else 0.0
+    registration_img = adc_img.new_image_like(np.minimum(values, clip).astype(np.float32))
+    trafo_file = ADC_TO_T1C_TRAFO_SCHEMA.format(base_dir=outdir)
+    trafo_file.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="register_adc_") as tmpdir:
+        reg = ants.registration(
+            fixed=ants.image_read(str(t1c_file)),
+            moving=registration_img,
+            type_of_transform=MD_REGISTRATION_TRANSFORM,
+            aff_metric=MD_REGISTRATION_METRIC,
+            initial_transform=MD_REGISTRATION_INIT,
+            outprefix=f"{tmpdir}/rigid_",
+        )
+        shutil.move(reg["fwdtransforms"][0], str(trafo_file))
+
+    warped = ants.apply_transforms(
+        fixed=ants.image_read(str(ATLAS_REGISTERED_SCHEMA.format(base_dir=outdir, modality="t1c"))),
+        moving=adc_img,
+        transformlist=[str(ATLAS_T1C_TRAFO_SCHEMA.format(base_dir=outdir)), str(trafo_file)],
+        interpolator="linear",
+        defaultvalue=0,
+    )
+    ants.image_write(warped, str(ATLAS_REGISTERED_SCHEMA.format(base_dir=outdir, modality=ADC_MODALITY)))
+    logger.info(
+        f"{outdir}: ADC registered to t1c (clipped at {clip:.0f} for the registration) and "
+        "moved to atlas space."
+    )
+
+
+def process_adc(
+    adc_file: Path,
+    t1c_file: Path,
+    outdir: Path,
+    preop_outdir: Optional[Path],
+    override: bool = False,
+) -> None:
+    """
+    ADC map of a processed exam without a DTI (-register_adc): ADC -> t1c registration and
+    resampling to atlas space (register_adc_to_atlas), to preop space with the exam's rigid
+    transform (postop/followup), the t1c brain mask with percentile normalization and, if
+    the exam's longitudinal transform exists, the warp to the preop space of the
+    longitudinal registration. Each output is skipped on its own if it exists (unless
+    override).
+    """
+    atlas_trafo_file = ATLAS_T1C_TRAFO_SCHEMA.format(base_dir=outdir)
+    if not atlas_trafo_file.exists():
+        raise FileNotFoundError(f"t1c atlas transform missing: {atlas_trafo_file}")
+
+    atlas_file = ATLAS_REGISTERED_SCHEMA.format(base_dir=outdir, modality=ADC_MODALITY)
+    if atlas_file.exists() and not override:
+        logger.info(f"{outdir}: ADC atlas registration already done, skipping.")
+    else:
+        register_adc_to_atlas(adc_file, t1c_file, outdir)
+
+    if preop_outdir is None:
+        coregistered_schema = ATLAS_REGISTERED_SCHEMA
+    else:
+        coregistered_schema = PREOP_COREGISTERED_SCHEMA
+        coregistered_file = PREOP_COREGISTERED_SCHEMA.format(base_dir=outdir, modality=ADC_MODALITY)
+        if coregistered_file.exists() and not override:
+            logger.info(f"{outdir}: ADC preop co-registration done, skipping.")
+        else:
+            resample_to_preop(outdir, preop_outdir, ADC_MODALITY)
+
+    stripped_file = MODALITY_STRIPPED_SCHEMA.format(base_dir=outdir, modality=ADC_MODALITY)
+    if stripped_file.exists() and not override:
+        logger.info(f"{outdir}: ADC skull stripping already done, skipping.")
+    else:
+        apply_brain_mask(
+            ADC_MODALITY, coregistered_schema.format(base_dir=outdir, modality=ADC_MODALITY), outdir
+        )
+
+    longitudinal_trafo_file = None
+    if preop_outdir is not None:
+        longitudinal_trafo_file = longitudinal_transform_file(outdir)
+        warped_file = LONGITUDINAL_WARP_SCHEMA.format(base_dir=outdir, modality=ADC_MODALITY)
+        if not longitudinal_trafo_file.exists():
+            logger.warning(f"{outdir}: no longitudinal transform, ADC not warped to preop space.")
+            longitudinal_trafo_file = None
+        elif warped_file.exists() and not override:
+            logger.info(f"{outdir}: ADC longitudinal warp already done, skipping.")
+        else:
+            warp_longitudinal(preop_outdir, outdir, ADC_MODALITY)
+
+    update_config(
+        outdir,
+        CONFIG_STEP_REGISTER_ADC,
+        {
+            "adc_file": str(adc_file),
+            "fixed_file": str(t1c_file),
+            "registration_transform": MD_REGISTRATION_TRANSFORM,
+            "registration_metric": MD_REGISTRATION_METRIC,
+            "registration_init": MD_REGISTRATION_INIT,
+            "registration_clip_percentile": ADC_CLIP_PERCENTILE,
+            "transform_file": str(ADC_TO_T1C_TRAFO_SCHEMA.format(base_dir=outdir)),
+            "atlas_transform_file": str(atlas_trafo_file),
+            "preop_rigid_transform_file": (
+                None if preop_outdir is None else str(PREOP_RIGID_TRAFO_SCHEMA.format(base_dir=outdir))
+            ),
+            "distortion_corrected": False,
+            "normalization": "percentile",
+            "longitudinal_transform_file": (
+                None if longitudinal_trafo_file is None else str(longitudinal_trafo_file)
+            ),
+        },
+    )
 
 
 def dirac_modality_files(preop_outdir: Path, exam_outdir: Path) -> Dict[str, Path]:
@@ -937,25 +1285,45 @@ def longitudinal_modalities(exam_outdir: Path) -> Dict[str, Path]:
     return modalities
 
 
-def warp_md_longitudinal(preop_outdir: Path, exam_outdir: Path) -> None:
+def warp_longitudinal(preop_outdir: Path, exam_outdir: Path, modality: str) -> None:
     """
-    Warps the skull-stripped mean diffusivity of an exam to preop space with its stored
-    longitudinal transform (as register_recurrence does for its additional modalities), for
-    exams whose longitudinal registration predates the MD output.
+    Warps a skull-stripped modality of an exam (e.g. the mean diffusivity or the trace) to
+    preop space with its stored longitudinal transform (as register_recurrence does for its
+    additional modalities), for outputs that postdate the longitudinal registration.
     """
     warped = ants.apply_transforms(
         fixed=ants.image_read(
             str(MODALITY_STRIPPED_SCHEMA.format(base_dir=preop_outdir, modality="t1c"))
         ),
         moving=ants.image_read(
-            str(MODALITY_STRIPPED_SCHEMA.format(base_dir=exam_outdir, modality=MD_MODALITY))
+            str(MODALITY_STRIPPED_SCHEMA.format(base_dir=exam_outdir, modality=modality))
         ),
         transformlist=[str(longitudinal_transform_file(exam_outdir))],
     )
     ants.image_write(
-        warped, str(LONGITUDINAL_WARP_SCHEMA.format(base_dir=exam_outdir, modality=MD_MODALITY))
+        warped, str(LONGITUDINAL_WARP_SCHEMA.format(base_dir=exam_outdir, modality=modality))
     )
-    logger.info(f"{exam_outdir}: mean diffusivity warped to preop space.")
+    logger.info(f"{exam_outdir}: {modality} warped to preop space.")
+
+
+def warp_corrected_recurrence(preop_outdir: Path, exam_outdir: Path) -> None:
+    """
+    Warps the corrected tumor segmentation of an exam to preop space with its stored
+    longitudinal transform, as register_recurrence does for the original one (nearest
+    neighbor). The corrected segmentation is written first if the exam does not have one yet.
+    """
+    correct_tumor_seg(exam_outdir)
+    fixed = ants.image_read(
+        str(MODALITY_STRIPPED_SCHEMA.format(base_dir=preop_outdir, modality="t1c"))
+    )
+    warped = ants.apply_transforms(
+        fixed=fixed.clone("unsigned int"),
+        moving=ants.image_read(str(TUMORSEG_CORRECTED_SCHEMA.format(base_dir=exam_outdir))),
+        transformlist=[str(longitudinal_transform_file(exam_outdir))],
+        interpolator="nearestNeighbor",
+    )
+    ants.image_write(warped, str(RECURRENCE_CORRECTED_SCHEMA.format(base_dir=exam_outdir)))
+    logger.info(f"{exam_outdir}: corrected tumor segmentation warped to preop space.")
 
 
 def normalize_series_description(description: str) -> str:
@@ -1244,6 +1612,10 @@ if __name__ == "__main__":
     # python -u scripts/process_respond_longitudinal.py -cuda_device 0 -longitudinal_registration
     # PET sessions only (needs the processed MRI exams):
     # python -u scripts/process_respond_longitudinal.py -pet_only
+    # Trace of every processed exam with a DTI only (needs the MD outputs; CPU only):
+    # python -u scripts/process_respond_longitudinal.py -compute_trace
+    # ADC of every processed exam without a DTI only (registered to the t1c; CPU only):
+    # python -u scripts/process_respond_longitudinal.py -register_adc
     parser = argparse.ArgumentParser()
     parser.add_argument("-cuda_device", type=str, default="0", help="GPU id to run on.")
     parser.add_argument(
@@ -1300,6 +1672,20 @@ if __name__ == "__main__":
         action="store_true",
         help="Only process the PET sessions (CT/PET registration to the preop exam), reusing "
         "the processed MRI exams; with -override existing PET outputs are recomputed.",
+    )
+    parser.add_argument(
+        "-compute_trace",
+        action="store_true",
+        help="Only compute the trace-weighted image (geometric mean of the diffusion-weighted "
+        "DTI volumes) of every processed exam with a DTI, in the spaces of the MD outputs "
+        "with the stored MD transforms; with -override existing trace outputs are recomputed.",
+    )
+    parser.add_argument(
+        "-register_adc",
+        action="store_true",
+        help="Only register the ADC map of every processed exam without a DTI to the t1c and "
+        "bring it to the spaces of the MD/trace outputs; with -override existing ADC outputs "
+        "are recomputed. Can be combined with -compute_trace.",
     )
     parser.add_argument(
         "-override",
@@ -1382,7 +1768,7 @@ if __name__ == "__main__":
                 continue
 
             exam_outdir = outdir_root / session
-            if args.longitudinal_registration or args.pet_only:
+            if args.longitudinal_registration or args.pet_only or args.compute_trace or args.register_adc:
                 if TUMORSEG_SCHEMA.format(base_dir=exam_outdir).exists():
                     exam_outdirs[session] = exam_outdir
                     if is_preop:
@@ -1407,7 +1793,7 @@ if __name__ == "__main__":
             except Exception:
                 logger.exception(f"{patient_id}/{session}: processing failed, skipping.")
 
-        if not args.pet_only:
+        if not (args.pet_only or args.compute_trace or args.register_adc):
             outdir_root.mkdir(parents=True, exist_ok=True)
             write_session_labels(
                 outfile=outdir_root / SESSION_LABELS_FILENAME,
@@ -1422,6 +1808,38 @@ if __name__ == "__main__":
             logger.warning(
                 f"{patient_id}: no processed preop exam, skipping longitudinal registration."
             )
+            continue
+
+        if args.compute_trace or args.register_adc:
+            # Trace of every processed exam with a DTI (with the transforms stored for its MD)
+            # and / or the ADC of every processed exam without one.
+            for session, exam_outdir in exam_outdirs.items():
+                dti_files = resolve_dti(patient_dir, subject, session)
+                exam_preop_outdir = None if session == reference else preop_outdir
+                if args.compute_trace and dti_files is not None:
+                    try:
+                        process_trace(
+                            dti_files, exam_outdir, preop_outdir=exam_preop_outdir, override=args.override
+                        )
+                    except Exception:
+                        logger.exception(f"{patient_id}/{session}: trace failed, skipping.")
+                if args.register_adc and dti_files is None:
+                    adc_file = resolve_adc(patient_dir, subject, session)
+                    if adc_file is None:
+                        logger.warning(f"{patient_id}/{session}: neither DTI nor ADC, nothing to register.")
+                        continue
+                    try:
+                        process_adc(
+                            adc_file,
+                            ORG_FILE_SCHEMA.format(
+                                patient_dir=patient_dir, subject=subject, session=session, suffix="t1c"
+                            ),
+                            exam_outdir,
+                            preop_outdir=exam_preop_outdir,
+                            override=args.override,
+                        )
+                    except Exception:
+                        logger.exception(f"{patient_id}/{session}: ADC registration failed, skipping.")
             continue
 
         # Every exam except the reference one is registered to the reference preop exam.
@@ -1442,9 +1860,17 @@ if __name__ == "__main__":
                 has_md = MD_MODALITY in longitudinal_modalities(exam_outdir)
                 if has_md and not md_warped_file.exists():
                     try:
-                        warp_md_longitudinal(preop_outdir, exam_outdir)
+                        warp_longitudinal(preop_outdir, exam_outdir, MD_MODALITY)
                     except Exception:
                         logger.exception(f"{patient_id}/{session}: MD warp failed, skipping.")
+                # The corrected segmentation may postdate the registration as well.
+                if not RECURRENCE_CORRECTED_SCHEMA.format(base_dir=exam_outdir).exists():
+                    try:
+                        warp_corrected_recurrence(preop_outdir, exam_outdir)
+                    except Exception:
+                        logger.exception(
+                            f"{patient_id}/{session}: corrected segmentation warp failed, skipping."
+                        )
                 continue
             try:
                 # DIRAC (four-modality model): t1, t1c, t2 and flair of both exams.
@@ -1454,6 +1880,7 @@ if __name__ == "__main__":
                     additional_modalities=longitudinal_modalities(exam_outdir),
                     **dirac_modality_files(preop_outdir, exam_outdir),
                 )
+                warp_corrected_recurrence(preop_outdir, exam_outdir)
             except Exception:
                 logger.exception(
                     f"{patient_id}/{session}: longitudinal registration failed, skipping."

@@ -16,8 +16,10 @@ Drawn are the processed preop, postop and followup sessions; intraop sessions (s
 resection date) and unprocessed sessions are left out. Day 0 is the postop session (one per
 patient; with several the one on the sheet's postop date, else the first, with a warning).
 
-Images: each session's own skull-stripped t1c / flair and tumor_seg.nii.gz below
-<patient>/processed/<session>/ (MODALITY_STRIPPED_SCHEMA, TUMORSEG_SCHEMA); all sessions of
+Images: each session's own skull-stripped t1c / flair and tumor_seg_corrected.nii.gz below
+<patient>/processed/<session>/ (MODALITY_STRIPPED_SCHEMA, TUMORSEG_CORRECTED_SCHEMA, written
+by scripts/process_respond_longitudinal.py; used for overlays, centres, videos and core
+volumes); all sessions of
 a patient lie on the preop grid (rigidly co-registered in atlas space). Every volume is
 reoriented to LAS before drawing, so the slices are in radiological view (subject's right on
 the image left, anterior / superior up; sagittal with anterior on the left) whatever the
@@ -32,6 +34,23 @@ Fake enhancing / Fake necrotic / Other / Unsure below each other (fields
 <session>_segmentation_<option>, e.g. <session>_segmentation_fake_enhancing, on value /Yes),
 above the volume panel a multiline text field "notes". Matplotlib draws the outlines, the widgets are
 added to the saved PDF with pypdf (AcroForm, NeedAppearances).
+
+Layout: fixed positions in inches (``Layout`` from the *_INCHES constants, no layout
+engine): from the top the colour legend, the column titles, the image rows (tick-box
+column, session label, six panels, video buttons), the legend again, the notes box and
+the volume panel.
+
+Videos: right of each row the buttons "Video: T1c", "Video: FLAIR" and "Video: trace"
+(or "Video: ADC" for exams without a trace but with a registered ADC; exams with neither
+get a note). Each video (<outdir>/videos/<patient>_<session>_<kind>.mp4, H.264, -fps
+slices per second, -video_scale upscaling) scrolls through the axial slices of the
+skull-stripped volume from inferior to superior over the brain mask's extent, every frame
+the plain slice and the slice with the segmentation overlaid side by side in radiological
+view with the same window and colours as the panels. With -video_links embed (default)
+the mp4 files are embedded in the PDF and a button runs the JavaScript that opens the
+attachment (Acrobat Reader; other viewers list the videos in their attachment panel),
+with -video_links launch a button is a Launch action of videos/<file> next to the PDF.
+Existing mp4 files are reused unless -override_videos; -no_videos draws no buttons.
 
 Core volume (bottom panel): necrotic + enhancing (labels 1 + 3) in preop-labelled sessions,
 enhancing alone (label 3) in postop and followup sessions, counted on the native
@@ -55,10 +74,11 @@ python scripts/visualize_respond_longitudinal.py -patients sub-GR149
 
 import argparse
 import csv
+import subprocess
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
-from typing import Dict, List, NamedTuple, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, NamedTuple, Optional, Sequence, Tuple
 
 import matplotlib
 
@@ -73,6 +93,7 @@ from matplotlib.patches import Patch, Rectangle
 from matplotlib.transforms import Bbox, ScaledTranslation, Transform
 from nibabel.orientations import apply_orientation, axcodes2ornt, io_orientation, ornt_transform
 from numpy.typing import NDArray
+from PIL import Image, ImageDraw, ImageFont
 from pypdf import PdfWriter
 from pypdf.generic import (
     ArrayObject,
@@ -86,7 +107,7 @@ from pypdf.generic import (
 )
 from scipy.ndimage import center_of_mass
 
-from predict_gbm.utils.constants import MODALITY_STRIPPED_SCHEMA, TUMORSEG_SCHEMA
+from predict_gbm.utils.constants import BRAIN_MASK_SCHEMA, MODALITY_STRIPPED_SCHEMA, TUMORSEG_CORRECTED_SCHEMA
 
 # Data layout of scripts/process_respond_longitudinal.py.
 DEFAULT_DATA_DIR = Path("/mnt/Drive4/lucas/respond_longitudinal/lucas_long_followup")
@@ -136,11 +157,21 @@ VIEWS = ("axial", "sagittal", "coronal")
 VIEW_INDEX = {"axial": 2, "sagittal": 0, "coronal": 1}
 DEFAULT_WINDOW_PERCENTILE = 99.0
 PANEL_INCHES = 3.0
-VOLUME_PANEL_INCHES = 4.0
+PANEL_GAP_INCHES = 0.08  # between the panels of a row and between rows
+MARGIN_INCHES = 0.15
+LEGEND_INCHES = 0.35  # band of the colour legend (above the titles and below the last row)
+TITLE_INCHES = 0.35  # band of the column titles
+ROW_LABEL_INCHES = 0.55  # band of the rotated session label left of the first panel
+SECTION_GAP_INCHES = 0.25
+NOTES_TITLE_INCHES = 0.3
+VOLUME_PANEL_INCHES = 4.0  # whole band: its legend, the axes, the x label
+VOLUME_LEGEND_INCHES = 0.35
+VOLUME_XLABEL_INCHES = 0.6
+VOLUME_YLABEL_INCHES = 0.9
 
 # Form fields: the tick-box row below each image row and the notes box above the volume
 # panel (sizes in inches; the widget rectangles are taken from the drawn outlines).
-FORM_COLUMN_INCHES = 2.0  # tick-box column left of each image row (about 0.4 in of it goes to layout margins); must hold the longest option text
+FORM_COLUMN_INCHES = 1.6  # tick-box column left of each image row; must hold the longest option text
 CHECKBOX_INCHES = 0.22
 FORM_LABEL = "Segmentation:"
 SEGMENTATION_OPTIONS = ("Good", "Fake enhancing", "Fake necrotic", "Other", "Unsure")
@@ -154,6 +185,34 @@ FORM_FONT_SIZE = 10
 FORM_LINE_WIDTH = 0.8
 CHECKBOX_ON_STATE = "Yes"
 FIELD_FONT_POINTS = 10
+# Videos: one per row and kind in <outdir>/VIDEO_DIRNAME; (skull-stripped modality, button
+# label) of every exam, then the first available diffusion image.
+VIDEO_DIRNAME = "videos"
+VIDEO_FILENAME = "{patient}_{session}_{kind}.mp4"
+VIDEO_KINDS = (("t1c", "T1c"), ("flair", "FLAIR"))
+DIFFUSION_KINDS = (("trace", "trace"), ("adc", "ADC"))
+VIDEO_MARGIN_SLICES = 2  # slices beyond the brain mask at both ends
+VIDEO_PANEL_GAP_PX = 4  # between the plain and the overlaid panel (before upscaling)
+VIDEO_FONT_PX = 16
+VIDEO_CRF = 23
+DEFAULT_FPS = 8
+DEFAULT_VIDEO_SCALE = 2
+FFMPEG = "ffmpeg"
+VIDEO_LINK_KINDS = ("embed", "launch")
+VIDEO_HINT = {
+    "embed": "Video buttons open the embedded mp4 files (Acrobat Reader); other viewers list them in the attachment panel.",
+    "launch": f"Video buttons open the mp4 files in the {VIDEO_DIRNAME} folder next to this PDF (Launch action).",
+}
+# Video buttons, side by side right of each row.
+BUTTON_COLUMN_INCHES = 3.1
+BUTTON_WIDTH_INCHES = 0.9
+BUTTON_HEIGHT_INCHES = 0.28
+BUTTON_GAP_INCHES = 0.1
+BUTTON_INDENT_INCHES = 0.1
+BUTTON_FONT_SIZE = 9
+BUTTON_COLOR = "tab:blue"
+BUTTON_LABEL = "Video: {label}"
+NO_DIFFUSION_TEXT = "(no trace / ADC)"
 
 # Standard (Stupp) protocol as drawn by the original script, in days.
 RESECTION_DAYS_BEFORE_POSTOP = 3
@@ -188,6 +247,7 @@ class Row:
     slices: Dict[str, Dict[str, NDArray]] = field(default_factory=dict)
     vmax: Dict[str, float] = field(default_factory=dict)
     overlays: Dict[str, NDArray] = field(default_factory=dict)
+    videos: Dict[str, Tuple[str, Path]] = field(default_factory=dict)  # kind -> (button label, mp4)
 
 
 @dataclass
@@ -201,12 +261,73 @@ class TreatmentEvents:
 
 @dataclass
 class FormField:
-    """A PDF form widget: kind 'checkbox' or 'text', its field name and rectangle in PDF
-    points (x0, y0, x1, y1, origin bottom left)."""
+    """A PDF annotation: kind 'checkbox' or 'text' (form widgets, name = field name) or
+    'link' (a video button, name = file name of the video), and its rectangle in PDF points
+    (x0, y0, x1, y1, origin bottom left)."""
 
     kind: str
     name: str
     rect: Tuple[float, float, float, float]
+
+
+@dataclass(frozen=True)
+class Layout:
+    """Positions of the figure parts in inches from the bottom left: from the top the colour
+    legend, the column titles, the image rows (tick-box column, session label, the panels,
+    the video buttons if ``buttons``), the legend again, the notes box with its title and the
+    volume panel (its legend, the axes, the x label)."""
+
+    n_row: int
+    buttons: bool = True
+
+    @property
+    def width(self) -> float:
+        n_panel = 2 * len(VIEWS)
+        width = 2 * MARGIN_INCHES + FORM_COLUMN_INCHES + ROW_LABEL_INCHES + n_panel * PANEL_INCHES + (n_panel - 1) * PANEL_GAP_INCHES
+        if self.buttons:
+            width += PANEL_GAP_INCHES + BUTTON_COLUMN_INCHES
+        return width
+
+    @property
+    def button_left(self) -> float:
+        """Left edge of the video-button column."""
+        return self.panel_left(2 * len(VIEWS) - 1) + PANEL_INCHES + PANEL_GAP_INCHES
+
+    @property
+    def notes_bottom(self) -> float:
+        return MARGIN_INCHES + VOLUME_PANEL_INCHES + SECTION_GAP_INCHES
+
+    @property
+    def bottom_legend_center(self) -> float:
+        return self.notes_bottom + NOTES_INCHES + NOTES_TITLE_INCHES + SECTION_GAP_INCHES + LEGEND_INCHES / 2
+
+    @property
+    def rows_bottom(self) -> float:
+        return self.bottom_legend_center + LEGEND_INCHES / 2
+
+    def row_bottom(self, i: int) -> float:
+        """Bottom edge of image row i (0 = top row)."""
+        return self.rows_bottom + (self.n_row - 1 - i) * (PANEL_INCHES + PANEL_GAP_INCHES)
+
+    @property
+    def rows_top(self) -> float:
+        return self.rows_bottom + self.n_row * PANEL_INCHES + (self.n_row - 1) * PANEL_GAP_INCHES
+
+    @property
+    def top_legend_center(self) -> float:
+        return self.rows_top + TITLE_INCHES + LEGEND_INCHES / 2
+
+    @property
+    def height(self) -> float:
+        return self.top_legend_center + LEGEND_INCHES / 2 + MARGIN_INCHES
+
+    def panel_left(self, k: int) -> float:
+        """Left edge of panel k (0 = first) of a row."""
+        return MARGIN_INCHES + FORM_COLUMN_INCHES + ROW_LABEL_INCHES + k * (PANEL_INCHES + PANEL_GAP_INCHES)
+
+    def axes(self, fig: plt.Figure, x0: float, y0: float, width: float, height: float) -> plt.Axes:
+        """An axes at the given inch rectangle (x0, y0 = bottom left)."""
+        return fig.add_axes([x0 / self.width, y0 / self.height, width / self.width, height / self.height])
 
 
 def session_date(session: str) -> date:
@@ -346,7 +467,7 @@ def load_rows(patient_dir: Path, sessions: Sequence[Session], postop: Session) -
     for session in sessions:
         session_dir = patient_dir / PROCESSED_DIRNAME / session.id
         files = [MODALITY_STRIPPED_SCHEMA.format(base_dir=session_dir, modality=m) for m in MODALITIES]
-        files.append(TUMORSEG_SCHEMA.format(base_dir=session_dir))
+        files.append(TUMORSEG_CORRECTED_SCHEMA.format(base_dir=session_dir))
         missing = [str(f) for f in files if not f.is_file()]
         if missing:
             logger.warning(f"{patient_dir.name}/{session.id} ({session.timepoint}): left out, missing {missing}")
@@ -399,6 +520,111 @@ def load_slices(patient_dir: Path, rows: List[Row], window_percentile: float) ->
             row.vmax[modality] = display_window(image, window_percentile)
             row.slices[modality] = oriented_slices(image, row.center)
         row.overlays = oriented_slices(row.labels, row.center)
+
+
+def video_kinds(session_dir: Path) -> List[Tuple[str, str]]:
+    """(skull-stripped modality, button label) of the videos of an exam: VIDEO_KINDS and the
+    first of DIFFUSION_KINDS whose file the exam has."""
+    kinds = list(VIDEO_KINDS)
+    for kind, label in DIFFUSION_KINDS:
+        if MODALITY_STRIPPED_SCHEMA.format(base_dir=session_dir, modality=kind).is_file():
+            kinds.append((kind, label))
+            break
+    return kinds
+
+
+def video_frame(image: NDArray, labels: NDArray, z: int, vmax: float, title: str, scale: int) -> NDArray:
+    """One frame (uint8 RGB, even width and height): axial slice z of the LAS volume in
+    radiological view, plain and with the segmentation overlaid (SEG_COLORS,
+    SEGMENTATION_ALPHA) side by side, upscaled by scale, the title at the top left."""
+    plane = np.rot90(image[:, :, z])
+    seg = np.rot90(labels[:, :, z])
+    gray = np.clip(plane / vmax, 0.0, 1.0) if vmax > 0 else np.zeros_like(plane)
+    plain = np.repeat(gray[..., None], 3, axis=-1)
+    overlaid = plain.copy()
+    for label, color in enumerate(SEG_COLORS[1:], start=1):
+        voxels = seg == label
+        overlaid[voxels] = (1.0 - SEGMENTATION_ALPHA) * overlaid[voxels] + SEGMENTATION_ALPHA * np.array(color[:3])
+    gap = np.zeros((plain.shape[0], VIDEO_PANEL_GAP_PX, 3), dtype=plain.dtype)
+    frame = Image.fromarray(np.rint(np.concatenate([plain, gap, overlaid], axis=1) * 255).astype(np.uint8))
+    frame = frame.resize((frame.width * scale, frame.height * scale), Image.NEAREST)
+    ImageDraw.Draw(frame).text((6, 4), title, fill=(255, 255, 255), font=ImageFont.load_default(size=VIDEO_FONT_PX))
+    if frame.width % 2 or frame.height % 2:  # yuv420p needs even dimensions
+        padded = Image.new("RGB", (frame.width + frame.width % 2, frame.height + frame.height % 2))
+        padded.paste(frame, (0, 0))
+        frame = padded
+    return np.asarray(frame)
+
+
+def encode_video(frames: Iterable[NDArray], outfile: Path, fps: int) -> int:
+    """Encodes RGB frames to outfile with ffmpeg (H.264, VIDEO_CRF, fps frames per second,
+    written to a temporary file first); returns the number of frames."""
+    tmp_file = outfile.with_name(outfile.name + ".tmp.mp4")
+    process = None
+    n_frames = 0
+    for frame in frames:
+        if process is None:
+            height, width = frame.shape[:2]
+            process = subprocess.Popen(
+                [
+                    FFMPEG, "-y", "-loglevel", "error",
+                    "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{width}x{height}", "-r", str(fps), "-i", "-",
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", str(VIDEO_CRF), "-pix_fmt", "yuv420p",
+                    "-movflags", "+faststart", str(tmp_file),
+                ],
+                stdin=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        process.stdin.write(frame.tobytes())
+        n_frames += 1
+    if process is None:
+        raise ValueError(f"{outfile}: no frames to encode.")
+    process.stdin.close()
+    error = process.stderr.read().decode(errors="replace")
+    if process.wait() != 0:
+        tmp_file.unlink(missing_ok=True)
+        raise RuntimeError(f"ffmpeg failed for {outfile}: {error.strip()}")
+    tmp_file.replace(outfile)
+    return n_frames
+
+
+def write_videos(
+    patient_dir: Path,
+    rows: Sequence[Row],
+    video_dir: Path,
+    window_percentile: float,
+    fps: int,
+    scale: int,
+    override: bool,
+) -> None:
+    """The videos of every row (``video_kinds``, recorded in row.videos): the axial slices
+    over the brain mask's extent plus VIDEO_MARGIN_SLICES, inferior to superior, windowed like
+    the panels. Existing files are reused unless override."""
+    video_dir.mkdir(parents=True, exist_ok=True)
+    for row in rows:
+        session_dir = patient_dir / PROCESSED_DIRNAME / row.session.id
+        mask, _ = load_oriented(BRAIN_MASK_SCHEMA.format(base_dir=session_dir))
+        z_mask = np.where(mask.any(axis=(0, 1)))[0]
+        if z_mask.size == 0:
+            raise ValueError(f"{session_dir}: empty brain mask.")
+        z_range = range(
+            max(int(z_mask[0]) - VIDEO_MARGIN_SLICES, 0),
+            min(int(z_mask[-1]) + VIDEO_MARGIN_SLICES, mask.shape[2] - 1) + 1,
+        )
+        for kind, label in video_kinds(session_dir):
+            outfile = video_dir / VIDEO_FILENAME.format(patient=patient_dir.name, session=row.session.id, kind=kind)
+            row.videos[kind] = (label, outfile)
+            if outfile.is_file() and not override:
+                continue
+            image, _ = load_oriented(MODALITY_STRIPPED_SCHEMA.format(base_dir=session_dir, modality=kind))
+            if image.shape != row.labels.shape:
+                raise ValueError(f"{session_dir}/{kind}: shape {image.shape} differs from the segmentation's {row.labels.shape}.")
+            vmax = display_window(image, window_percentile)
+            heading = f"{row.session.id} {row.session.timepoint} (day {row.day})   {label}"
+            n_frames = encode_video(
+                (video_frame(image, row.labels, z, vmax, f"{heading}   z={z}", scale) for z in z_range), outfile, fps
+            )
+            logger.info(f"{patient_dir.name}/{row.session.id}: wrote {outfile.name} ({n_frames} slices).")
 
 
 def session_blocks(days: Sequence[int], max_gap: int = 1) -> List[Tuple[int, int]]:
@@ -546,6 +772,31 @@ def draw_notes_box(ax: plt.Axes) -> None:
     ax.set_title(NOTES_TITLE, loc="left", fontsize=FORM_FONT_SIZE, fontweight="bold")
 
 
+def draw_button_row(fig: plt.Figure, ax: plt.Axes, row: Row) -> None:
+    """The video buttons of a row side by side, right of its panels, in inches from the axes'
+    left edge and centred vertically (the Rectangle patches, in the order of row.videos, get
+    the link annotations in ``widget_fields``); a grey note where the exam has no diffusion
+    image."""
+    ax.set_axis_off()
+    trans = inches_from(fig, ax, 0.0, 0.5)
+    x = BUTTON_INDENT_INCHES
+    for label, _ in row.videos.values():
+        ax.add_patch(Rectangle(
+            (x, -BUTTON_HEIGHT_INCHES / 2), BUTTON_WIDTH_INCHES, BUTTON_HEIGHT_INCHES, transform=trans,
+            facecolor="white", edgecolor=BUTTON_COLOR, linewidth=FORM_LINE_WIDTH,
+        ))
+        ax.text(
+            x + BUTTON_WIDTH_INCHES / 2, 0.0, BUTTON_LABEL.format(label=label), transform=trans, clip_on=True,
+            color=BUTTON_COLOR, fontsize=BUTTON_FONT_SIZE, ha="center", va="center",
+        )
+        x += BUTTON_WIDTH_INCHES + BUTTON_GAP_INCHES
+    if len(row.videos) == len(VIDEO_KINDS):
+        ax.text(
+            x, 0.0, NO_DIFFUSION_TEXT, transform=trans, clip_on=True, color="grey",
+            fontsize=BUTTON_FONT_SIZE - 1, ha="left", va="center",
+        )
+
+
 def appearance_stream(writer: PdfWriter, width: float, height: float, content: str, resources: Optional[DictionaryObject] = None) -> NameObject:
     """An appearance XObject of the given size and content stream, added to the writer."""
     stream = DecodedStreamObject()
@@ -561,12 +812,21 @@ def appearance_stream(writer: PdfWriter, width: float, height: float, content: s
     return writer._add_object(stream)
 
 
-def add_form_fields(pdf_file: Path, fields: Sequence[FormField]) -> None:
+def add_form_fields(
+    pdf_file: Path,
+    fields: Sequence[FormField],
+    link_kind: Optional[str] = None,
+    attachments: Optional[Dict[str, Path]] = None,
+) -> None:
     """
     Adds the widgets as an AcroForm to the single-page PDF written by matplotlib: checkboxes
     (on state CHECKBOX_ON_STATE, a ZapfDingbats check mark as 'on' appearance, nothing when
     off) and multiline text fields (Helvetica, appearance generated by the viewer via
-    NeedAppearances). The outlines are already drawn in the page content.
+    NeedAppearances), and the video buttons as link annotations: with link_kind 'embed' the
+    videos (attachments: file name -> file) are embedded in the PDF and a button runs the
+    JavaScript that opens its attachment (exportDataObject), with 'launch' a button is a
+    Launch action of VIDEO_DIRNAME/<file name> relative to the PDF. The outlines are already
+    drawn in the page content.
     """
     writer = PdfWriter(clone_from=str(pdf_file))
     page = writer.pages[0]
@@ -595,6 +855,38 @@ def add_form_fields(pdf_file: Path, fields: Sequence[FormField]) -> None:
     for form_field in fields:
         x0, y0, x1, y1 = form_field.rect
         width, height = x1 - x0, y1 - y0
+        if form_field.kind == "link":
+            if link_kind == "embed":
+                action = DictionaryObject(
+                    {
+                        NameObject("/S"): NameObject("/JavaScript"),
+                        NameObject("/JS"): TextStringObject(
+                            f'this.exportDataObject({{cName: "{form_field.name}", nLaunch: 2}});'
+                        ),
+                    }
+                )
+            elif link_kind == "launch":
+                action = DictionaryObject(
+                    {
+                        NameObject("/S"): NameObject("/Launch"),
+                        NameObject("/F"): TextStringObject(f"{VIDEO_DIRNAME}/{form_field.name}"),
+                    }
+                )
+            else:
+                raise ValueError(f"link kind {link_kind!r} is not one of {VIDEO_LINK_KINDS}.")
+            link = DictionaryObject(
+                {
+                    NameObject("/Type"): NameObject("/Annot"),
+                    NameObject("/Subtype"): NameObject("/Link"),
+                    NameObject("/Rect"): ArrayObject([FloatObject(v) for v in form_field.rect]),
+                    NameObject("/Border"): ArrayObject([NumberObject(0), NumberObject(0), NumberObject(0)]),
+                    NameObject("/F"): NumberObject(4),  # print
+                    NameObject("/P"): page.indirect_reference,
+                    NameObject("/A"): action,
+                }
+            )
+            annotations.append(writer._add_object(link))
+            continue
         widget = DictionaryObject(
             {
                 NameObject("/Type"): NameObject("/Annot"),
@@ -638,6 +930,11 @@ def add_form_fields(pdf_file: Path, fields: Sequence[FormField]) -> None:
         field_refs.append(reference)
         annotations.append(reference)
     page[NameObject("/Annots")] = annotations
+    if link_kind == "embed":
+        # pypdf appends to the /EmbeddedFiles name tree, which the PDF spec requires sorted:
+        # Acrobat binary-searches it, so unsorted names make some buttons fail silently.
+        for name, video_file in sorted((attachments or {}).items()):
+            writer.add_attachment(name, video_file.read_bytes())
     writer.root_object[NameObject("/AcroForm")] = DictionaryObject(
         {
             NameObject("/Fields"): field_refs,
@@ -655,27 +952,37 @@ def render(
     rows: Sequence[Row],
     events: Optional[TreatmentEvents],
     yscale: Optional[Tuple[float, float]] = None,
+    link_kind: Optional[str] = None,
 ) -> int:
-    """The figure of one modality: the slice grid with a tick-box column per session, the
-    notes box and the core-volume panel; returns the number of form fields added."""
-    n_col = 2 * len(VIEWS)
-    n_row = len(rows)
-    fig_height = PANEL_INCHES * n_row + NOTES_INCHES + VOLUME_PANEL_INCHES
-    fig = plt.figure(figsize=(FORM_COLUMN_INCHES + PANEL_INCHES * n_col + 0.8, fig_height), constrained_layout=True)
-    width_ratios = [FORM_COLUMN_INCHES / PANEL_INCHES] + [1.0] * n_col
-    height_ratios = [1.0] * n_row + [NOTES_INCHES / PANEL_INCHES, VOLUME_PANEL_INCHES / PANEL_INCHES]
-    grid = fig.add_gridspec(n_row + 2, n_col + 1, width_ratios=width_ratios, height_ratios=height_ratios)
-    fig.legend(
-        handles=[Patch(color=c, label=l) for c, l in zip(SEG_COLORS[1:], SEG_LABELS)],
-        loc="outside upper center", ncol=len(SEG_LABELS), fontsize=10, frameon=False,
-    )
+    """The figure of one modality at the inch positions of ``Layout``: the colour legend,
+    the slice grid with a tick-box column per session and, with link_kind (VIDEO_LINK_KINDS)
+    and videos in the rows, the video buttons right of it, the legend again, the notes box
+    and the core-volume panel; returns the number of annotations added."""
+    buttons = link_kind is not None and any(row.videos for row in rows)
+    layout = Layout(len(rows), buttons)
+    fig = plt.figure(figsize=(layout.width, layout.height))
+    handles = [Patch(color=c, label=l) for c, l in zip(SEG_COLORS[1:], SEG_LABELS)]
+    for y in (layout.top_legend_center, layout.bottom_legend_center):
+        fig.legend(
+            handles=handles, loc="center", bbox_to_anchor=(0.5, y / layout.height),
+            ncol=len(SEG_LABELS), fontsize=10, frameon=False,
+        )
+    if buttons:
+        fig.text(
+            1.0 - MARGIN_INCHES / layout.width, layout.top_legend_center / layout.height, VIDEO_HINT[link_kind],
+            ha="right", va="center", fontsize=8, color="grey",
+        )
     name = MODALITIES[modality]
     form_axes = []
+    button_axes = []
     for i, row in enumerate(rows):
-        form_axes.append(fig.add_subplot(grid[i, 0]))
+        y0 = layout.row_bottom(i)
+        form_axes.append(layout.axes(fig, MARGIN_INCHES, y0, FORM_COLUMN_INCHES, PANEL_INCHES))
+        if buttons:
+            button_axes.append(layout.axes(fig, layout.button_left, y0, BUTTON_COLUMN_INCHES, PANEL_INCHES))
         for j, view in enumerate(VIEWS):
-            plain = fig.add_subplot(grid[i, 2 * j + 1])
-            overlaid = fig.add_subplot(grid[i, 2 * j + 2])
+            plain = layout.axes(fig, layout.panel_left(2 * j), y0, PANEL_INCHES, PANEL_INCHES)
+            overlaid = layout.axes(fig, layout.panel_left(2 * j + 1), y0, PANEL_INCHES, PANEL_INCHES)
             for ax in (plain, overlaid):
                 ax.imshow(row.slices[modality][view], cmap="gray", vmin=0.0, vmax=row.vmax[modality], interpolation="none")
                 ax.set_xticks([])
@@ -694,8 +1001,11 @@ def render(
                 overlaid.set_title(f"{view} {name} + segmentation", fontsize=12, fontweight="bold", pad=8)
             if j == 0:
                 plain.set_ylabel(f"{row.session.id}\n{row.session.timepoint} (day {row.day})", fontsize=12, fontweight="bold")
-    notes_ax = fig.add_subplot(grid[n_row, :])
-    bottom = fig.add_subplot(grid[n_row + 1, :])
+    notes_ax = layout.axes(fig, MARGIN_INCHES, layout.notes_bottom, layout.width - 2 * MARGIN_INCHES, NOTES_INCHES)
+    bottom = layout.axes(
+        fig, MARGIN_INCHES + VOLUME_YLABEL_INCHES, MARGIN_INCHES + VOLUME_XLABEL_INCHES,
+        layout.width - 2 * MARGIN_INCHES - VOLUME_YLABEL_INCHES, VOLUME_PANEL_INCHES - VOLUME_XLABEL_INCHES - VOLUME_LEGEND_INCHES,
+    )
     days = [row.day for row in rows]
     volumes = [row.core_ml for row in rows]
     bottom.plot(days, volumes, "o-", color=CORE_CURVE_COLOR, markersize=6, label=CORE_CURVE_LABEL)
@@ -709,7 +1019,7 @@ def render(
     if events is not None:
         mark_treatment_events(bottom, events)
     first, last = min(days), max(days)
-    margin = 0.01 * max(last - first, 1)
+    margin = 0.03 * max(last - first, 1)  # room for the session labels at both ends
     bottom.set_xlim(first - margin, last + margin)
     if yscale is not None:
         bottom.set_ylim(*yscale)
@@ -719,27 +1029,38 @@ def render(
     bottom.legend(fontsize=9, loc="lower left", bbox_to_anchor=(0.0, 1.0), ncol=5, frameon=False)
     for ax in form_axes:
         draw_form_column(fig, ax)
+    for ax, row in zip(button_axes, rows):
+        draw_button_row(fig, ax, row)
     draw_notes_box(notes_ax)
-    # The widget rectangles are taken from the axes positions of the saved figure's layout pass.
     fig.savefig(str(outfile), format="pdf")
-    clipped = [t for ax in form_axes for t in clipped_texts(fig, ax)]
+    clipped = [t for ax in form_axes + button_axes for t in clipped_texts(fig, ax)]
     if clipped:
-        logger.warning(f"{outfile.name}: {len(clipped)} form text(s) cut off by the tick-box column width (FORM_COLUMN_INCHES), e.g. '{clipped[0]}'.")
-    fields = widget_fields(fig, form_axes, notes_ax, rows)
+        logger.warning(f"{outfile.name}: {len(clipped)} form / button text(s) cut off by their column width, e.g. '{clipped[0]}'.")
+    fields = widget_fields(fig, form_axes, button_axes, notes_ax, rows)
     plt.close(fig)
-    add_form_fields(outfile, fields)
+    attachments = {video_file.name: video_file for row in rows for _, video_file in row.videos.values()}
+    add_form_fields(outfile, fields, link_kind if buttons else None, attachments)
     return len(fields)
 
-
-def widget_fields(fig: plt.Figure, form_axes: Sequence[plt.Axes], notes_ax: plt.Axes, rows: Sequence[Row]) -> List[FormField]:
-    """The widget rectangles of the drawn outlines after the final layout pass: every
-    Rectangle patch of a form column is a checkbox (option order), the notes axes the text
-    field."""
+def widget_fields(
+    fig: plt.Figure,
+    form_axes: Sequence[plt.Axes],
+    button_axes: Sequence[plt.Axes],
+    notes_ax: plt.Axes,
+    rows: Sequence[Row],
+) -> List[FormField]:
+    """The annotation rectangles of the drawn outlines: every Rectangle patch of a form column
+    is a checkbox (option order), every one of a button row a video link (order of
+    row.videos), the notes axes the text field."""
     fields: List[FormField] = []
     for ax, row in zip(form_axes, rows):
         boxes = [p for p in ax.patches if isinstance(p, Rectangle)]
         for option, box in zip(SEGMENTATION_OPTIONS, boxes):
             fields.append(FormField("checkbox", field_name(row.session, option), points_bbox(fig, box.get_window_extent())))
+    for ax, row in zip(button_axes, rows):
+        boxes = [p for p in ax.patches if isinstance(p, Rectangle)]
+        for (_, video_file), box in zip(row.videos.values(), boxes):
+            fields.append(FormField("link", video_file.name, points_bbox(fig, box.get_window_extent())))
     fields.append(FormField("text", NOTES_FIELD_NAME, points_bbox(fig, notes_ax.get_window_extent())))
     return fields
 
@@ -764,8 +1085,13 @@ def summarize_patient(
     sheet: Dict[str, Dict[str, Optional[date]]],
     window_percentile: float,
     yscale: Optional[Tuple[float, float]],
+    video_dir: Optional[Path] = None,
+    link_kind: str = VIDEO_LINK_KINDS[0],
+    fps: int = DEFAULT_FPS,
+    video_scale: int = DEFAULT_VIDEO_SCALE,
+    override_videos: bool = False,
 ) -> None:
-    """Both figures of one patient."""
+    """Both figures of one patient and, with video_dir, the videos of its exams."""
     patient = patient_dir.name
     subject, sessions = read_sessions(patient_dir / PROCESSED_DIRNAME / SESSION_LABELS_FILENAME)
     sheet_row = sheet.get(subject)
@@ -786,10 +1112,12 @@ def summarize_patient(
             f"{patient}/{row.session.id} {row.session.timepoint} (day {row.day}): core {row.core_ml:.2f} mL, "
             f"slices x={x} y={y} z={z} ({row.center_source})"
         )
+    if video_dir is not None:
+        write_videos(patient_dir, rows, video_dir, window_percentile, fps, video_scale, override_videos)
     for modality in MODALITIES:
         outfile = outdir / OUTPUT_FILENAME.format(patient=patient, modality=modality)
-        n_fields = render(outfile, modality, rows, events, yscale)
-        logger.info(f"{patient}: wrote {outfile} ({n_fields} form fields)")
+        n_fields = render(outfile, modality, rows, events, yscale, link_kind if video_dir is not None else None)
+        logger.info(f"{patient}: wrote {outfile} ({n_fields} annotations)")
 
 
 def parse_args() -> argparse.Namespace:
@@ -801,6 +1129,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("-dates_file", type=str, default=None, help=f"Surgery dates sheet (default <data_dir>/{DATES_FILENAME} if it exists).")
     parser.add_argument("-window_percentile", type=float, default=DEFAULT_WINDOW_PERCENTILE, help=f"Display window: black at 0, white at this percentile of the non-zero voxels (default {DEFAULT_WINDOW_PERCENTILE:g}).")
     parser.add_argument("-yscale", type=float, nargs=2, default=None, metavar=("LOW", "HIGH"), help="y limits in mL of the volume panel (default: autoscale).")
+    parser.add_argument("-no_videos", action="store_true", help="Write no videos and draw no video buttons.")
+    parser.add_argument("-video_links", type=str, choices=VIDEO_LINK_KINDS, default=VIDEO_LINK_KINDS[0], help="How a button reaches its video: 'embed' embeds the mp4 in the PDF (opened by Acrobat Reader, listed in the attachment panel elsewhere), 'launch' opens the file in the videos folder next to the PDF (default embed).")
+    parser.add_argument("-override_videos", action="store_true", help="Rewrite existing mp4 files (default: reuse them).")
+    parser.add_argument("-fps", type=int, default=DEFAULT_FPS, help=f"Slices per second of the videos (default {DEFAULT_FPS}).")
+    parser.add_argument("-video_scale", type=int, default=DEFAULT_VIDEO_SCALE, help=f"Upscaling of the slices in the videos (default {DEFAULT_VIDEO_SCALE}).")
     return parser.parse_args()
 
 
@@ -826,10 +1159,14 @@ if __name__ == "__main__":
     outdir = Path(args.outdir) if args.outdir else data_dir / DEFAULT_OUTDIR_NAME
     outdir.mkdir(parents=True, exist_ok=True)
     yscale = tuple(args.yscale) if args.yscale else None
+    video_dir = None if args.no_videos else outdir / VIDEO_DIRNAME
     failed = []
     for patient_dir in patient_dirs:
         try:
-            summarize_patient(patient_dir, outdir, sheet, args.window_percentile, yscale)
+            summarize_patient(
+                patient_dir, outdir, sheet, args.window_percentile, yscale,
+                video_dir, args.video_links, args.fps, args.video_scale, args.override_videos,
+            )
         except Exception:
             logger.exception(f"{patient_dir.name}: figure failed, skipping.")
             failed.append(patient_dir.name)
